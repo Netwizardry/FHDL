@@ -1,0 +1,4 @@
+﻿# Source File Hash: 36c922c2efa3636486c3b51ad2becc2441e5d3ac2a4237d58d9517b1bd54d20b,# Units: IMPERIAL
+Node_ID,Type,X (ft),Y (ft),Z (ft),Head (ft),Pressure (PSI),Surge (PSI),Req Q (GPM)
+N1,TANK,0.0,0.0,0.0,54.3951,2.3531e+01,0.0000e+00,0.0
+N2,TERMINAL,100.0,0.0,0.0,33.5187,1.4500e+01,0.0000e+00,100.0

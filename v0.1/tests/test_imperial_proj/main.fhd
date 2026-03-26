@@ -1,0 +1,11 @@
+
+    System_Setup { 
+        Units = IMPERIAL; 
+        Temp = 68.0; 
+    }
+    Topology { 
+        node N1(0, 0, 0, TANK);
+        node N2(100, 0, 0, TERMINAL, 100, 14.5); // 100 GPM, 14.5 PSI (~0.1 MPa)
+        pipe P1(N1, N2, 50A, Steel_ASTM_A53);
+    }
+    
