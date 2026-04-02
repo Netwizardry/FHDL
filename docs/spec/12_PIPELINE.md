@@ -2,40 +2,39 @@
 
 FHDL 시스템은 파일, 메모리(그래프), 데이터베이스 간의 무결성을 유지하며, 다양한 단위계와 규격을 통합 관리하는 파이프라인을 가집니다.
 
-## 1. 프로젝트 관리 및 동적 동기화
+## 1. 프로젝트 관리 및 데이터 파이프라인
 
-### 1.1 삼각 동기화 (Triple Synchronization)
-시스템은 변경 사항 발생 시 다음의 세 레이어를 동시에 업데이트하여 데이터 일관성을 보장합니다.
-1.  **메모리(Memory):** `FluidSystem` 객체 및 NetworkX 그래프 엔진. 실시간 계산용.
-2.  **데이터베이스(Cache DB):** `state.db` (SQLite). 고성능 쿼리 및 UI 상태 유지용.
-3.  **소스 파일(Source File):** `main.fhd`. 사용자의 설계 원본 데이터 (Atomic Save 적용).
+### 1.1 [S-PIP-001] 정규화 계층 (Normalization Layer)
+파서가 생성한 AST를 계산 엔진용 엔티티로 변환하는 과정에서 다음 검증 및 보완 작업을 수행한다.
+*   **Default Injection:** DSL에서 생략된 속성에 대해 `APPENDIX_A`의 표준 기본값을 주입한다.
+*   **Unit Normalization:** 모든 수치 데이터를 내부 표준 단위(SI)로 일괄 변환한다.
+*   **Reference Resolution:** `connect` 문에 정의된 ID를 실제 엔티티 객체의 포인터(참조)로 바인딩한다.
 
-## 1.3 양방향 동기화 (Inverse Synchronization Protocol - C01)
-시스템은 캔버스의 그래픽 수정 사항을 텍스트 소스(.fhd)에 역으로 반영하기 위해 다음의 패치(Patch) 알고리즘을 사용합니다.
+### 1.2 [S-PIP-002] 데이터 출처 추적 (Provenance Tracking)
+시스템은 모든 계산 결과값($V, P, h_f$ 등)에 대해 역추적을 위한 메타데이터를 유지한다.
+*   **Source Binding:** 결과값이 유도된 원본 DSL의 라인 번호와 식별자를 연결한다.
+*   **Formula Binding:** 계산에 사용된 공식 ID(`FOR-DW-001` 등)를 기록한다.
+*   **Assumption Log:** 계산 중 적용된 기본값(Default)이나 가정 사항을 별도 로그로 유지하여 리포트에 반영한다.
 
-1.  **Graphic Event Capture:** 사용자가 노드 위치를 변경하거나 속성을 수정할 때 `ModificationEvent` 발생.
-2.  **Source Mapping:** 해당 그래픽 객체의 ID와 소스 코드 내 `SourceSpan`(Line/Col) 정보를 매칭.
-3.  **Smart Patching:** 원본 텍스트 전체를 덮어쓰지 않고, 해당 블록의 값만 정규식 또는 AST 기반으로 치환(Replace)하여 주석과 서식을 유지.
-4.  **Conflict Resolution:** 텍스트 에디터와 캔버스가 동시에 수정될 경우, 텍스트 에디터의 `Source of Truth` 권한을 우선하며 캔버스는 '재로드 대기' 상태로 전환.
+### 1.3 [S-PIP-003] 저널 기반 장애 복구 (Journal Recovery)
+비정상 종료 후 재기동 시 다음 절차에 따라 데이터를 자동 복구한다.
+1.  **Detection:** `project_meta` 테이블의 `journal_status`가 `DIRTY`인 경우 복구 모드로 진입한다.
+2.  **Redo Process:** 마지막 체크섬 저장 이후 `.journal` 파일에 기록된 모든 변경 이벤트를 순차적으로 재실행한다.
+3.  **Consistency Check:** 복구된 메모리 모델과 `state.db` 간의 무결성을 검증하고, 불일치 시 `state.db`를 폐기하고 원문 재파싱을 트리거한다.
 
-## 2. 단위 변환 및 물성 엔진 (`UnitConverter`)
-...
-모든 내부 연산은 **SI 표준 단위**를 사용하며, 입출력 시에만 설정된 단위계에 따라 변환합니다.
+## 2. 양방향 동기화 (Inverse Synchronization Protocol)
 
-| 물리량 | 내부 표준 단위 (SI) | METRIC (사용자용) | IMPERIAL (사용자용) |
-| :--- | :--- | :--- | :--- |
-| 유량 | $m^3/s$ | L/min | GPM |
-| 압력 | Pa | MPa | PSI |
-| 길이/수두 | m | m | ft |
-| 온도 | °C | °C | °F |
+### 2.1 [S-PIP-004] 스마트 패치 알고리즘 (Smart Patching)
+GUI 수정 사항을 DSL 텍스트에 반영할 때 소스 코드의 서식을 보존하기 위해 다음 규칙을 따른다.
+*   **Line-based Replace:** 수정된 속성이 위치한 줄(Line)만 특정하여 값을 치환하고, 주석(`//`)이나 빈 줄은 보존한다.
+*   **Atomic Buffer:** 패치된 텍스트를 임시 버퍼에 먼저 생성하고, 문법 검증(`Validating`) 통과 시에만 최종 파일에 덮어쓴다.
 
 ## 3. 라이브러리 및 규격 관리 (`LibraryManager`)
 
-### 3.1 명칭 기반 내경 검색
-배관 정의 시 `50A`, `2"` 등의 공칭 명칭(Nominal Size)을 입력하면, 라이브러리(`STANDARD_MATERIALS`)에서 해당 재질의 **실제 내경(Actual Diameter)**을 자동으로 찾아 할당합니다.
-
-### 3.2 자동 피팅 손실 계산 (Auto-Fitting)
-두 배관 노드의 벡터를 분석하여 꺾임각을 계산하고, 이에 적합한 K-factor(예: 90도 엘보 = 0.9)를 자동으로 산출하여 `Pipe.auto_fittings_k`에 반영합니다.
+### 3.1 [S-PIP-005] 자동 피팅 손실 계산 (Auto-Fitting)
+네트워크 구성 시 배관 간의 연결 각도를 분석하여 국부 손실 계수($K$)를 자동 산출한다.
+*   **Angle Calculation:** $\vec{V}_{in}$과 $\vec{V}_{out}$의 내적을 통해 꺾임각($\theta$)을 도출한다.
+*   **K-factor Selection:** $\theta \approx 90^\circ$ 인 경우 엘보(Elbow), 분기 시에는 티(Tee) 계수를 라이브러리에서 조회하여 `loss_k`에 합산한다.
 
 ## 4. 모듈 간 데이터 계약 (Interface Contracts)
 

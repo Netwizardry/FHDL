@@ -17,18 +17,24 @@ FHDL 시스템은 문서, 코드, 테스트, UI 전반에서 일관된 용어와
 *   **자동선정 (Auto-Sizing):** 시스템이 설계 제약에 맞춰 관경, 펌프 등을 자동으로 결정하는 프로세스.
 *   **수동 지정 (Manual Override):** 자동 산정 대신 사용자가 고정한 특정 값.
 
+### 1.3 데이터 무결성 및 시스템 관리 관련
+*   **[TERM-001] Inverse Sync (역방향 동기화):** GUI 시각화 도구에서 변경된 배치나 속성을 원본 DSL(텍스트) 파일에 자동으로 반영하는 기술.
+*   **[TERM-002] Journaling (저널링):** 데이터 변경 이력을 영구 저장소에 기록하여 시스템 장애 시 최신 상태로 복구할 수 있게 하는 메커니즘.
+*   **[TERM-003] Provenance (데이터 출처):** 리포트나 UI에 표시되는 개별 수치 데이터가 어떤 수식, 어떤 입력 필드로부터 유도되었는지를 추적하는 정보.
+*   **[TERM-004] Atomic Save (원자적 저장):** 파일 저장 시 부분적인 손상이 발생하지 않도록 '전부 성공' 또는 '전부 취소'를 보장하는 저장 방식.
+*   **[TERM-005] Normalization (정규화):** 파싱된 DSL AST(추상 구문 트리)를 계산 엔진이 처리 가능한 표준 엔티티 모델로 변환하는 과정.
+
 ## 2. 한/영 표준 용어 대응표
 
 | 한국어 표준 용어 | 영문 대응 (Internal/Code) | 비고 |
 | :--- | :--- | :--- |
-| **시스템** | System | - |
+| **역방향 동기화** | InverseSync | `inverse_sync` |
+| **저널 복구** | JournalRecovery | `journal_recovery` |
+| **데이터 출처 관리** | Provenance | `provenance_map` |
+| **원자적 저장** | AtomicSave | `atomic_save` |
+| **정규화 계층** | NormalizationLayer | `normalization_layer` |
 | **최불리 경로** | WorstCasePath | `worst_case_path_id` |
 | **총 요구양정** | TotalRequiredHead | `total_required_head` |
-| **손실수두** | HeadLoss | `head_loss` |
-| **마찰손실** | FrictionLoss | `friction_loss` |
-| **국부손실** | LocalLoss | `local_loss` |
-| **정수두** | StaticHead | `static_head` |
-| **자동선정 결과** | AutoSizingResult | `auto` 키워드 대응 |
 
 ## 3. 명명 규칙 (Naming Conventions)
 

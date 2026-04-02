@@ -35,13 +35,36 @@
 
 ## 3. 요구사항 추적성 (Traceability Matrix)
 
-| 상위 요구사항 (Source) | 설계 요소 (Design) | 검증 기준 (Test) |
-| :--- | :--- | :--- |
-| **R1. 자동 관경 산정** | [09. DSL `auto`](./08_LANGUAGE.md), [10. 산정식](./09_FORMULAS.md) | [T-AUTO-001](./16_TESTS.md) |
-| **R2. 2-Pass 수리해석** | [12. 솔버 엔진](./11_SOLVER.md), [06. 상태 전이](./05_EXECUTION_FLOW.md) | [T-CAL-006](./16_TESTS.md) |
-| **R3. NPSHa/진공 진단** | [12. 가용수두 공식](./11_SOLVER.md), [16. WRN003](./15_ERRORS.md) | [T-ERR-005](./16_TESTS.md) |
-| **R4. 비동기 UI 연동** | [13. 파이프라인](./12_PIPELINE.md), [15. GUI](./14_GUI.md) | [T-NFR-003](./16_TESTS.md) |
-| **R5. 데이터 무결성** | [13. Atomic Save](./12_PIPELINE.md), [07. NFR](./06_NON_FUNCTIONAL_REQUIREMENTS.md) | [T-NFR-001](./16_TESTS.md) |
+| ID | 상위 요구사항 (Source) | 설계 요소 (Design) | 검증 기준 (Test Case) |
+| :--- | :--- | :--- | :--- |
+| **R01** | **자동 관경 산정 (Auto-Sizing)** | [S-DSL-001](./08_LANGUAGE.md), [S-FOR-002](./09_FORMULAS.md) | [T-AUTO-001](./16_TESTS.md) |
+| **R02** | **2-Pass 수리해석 (Steady-state)** | [S-SOL-001](./11_SOLVER.md), [S-FLO-002](./05_EXECUTION_FLOW.md) | [T-CAL-001](./16_TESTS.md) |
+| **R03** | **NPSHa/캐비테이션 진단** | [S-SOL-003](./11_SOLVER.md), [S-ERR-003](./15_ERRORS.md) | [T-ERR-005](./16_TESTS.md) |
+| **R04** | **비동기 UI 연동 (Async UI)** | [S-PIP-001](./12_PIPELINE.md), [S-GUI-001](./14_GUI.md) | [T-NFR-003](./16_TESTS.md) |
+| **R05** | **데이터 무결성 (Atomic Save)** | [S-PIP-004](./12_PIPELINE.md), [S-NFR-001](./06_NON_FUNCTIONAL_REQUIREMENTS.md) | [T-NFR-001](./16_TESTS.md) |
+| **R06** | **Hazen-Williams 마찰 모델** | [S-FOR-003](./09_FORMULAS.md), [S-CAL-002](./02_CALCULATION_REQUIREMENTS.md) | [T-CAL-002](./16_TESTS.md) |
+| **R07** | **Inverse Sync (GUI <-> DSL)** | [S-PIP-002](./12_PIPELINE.md), [S-GUI-003](./14_GUI.md) | [T-SYN-001](./16_TESTS.md) |
+| **R08** | **상태기계 기반 흐름 통제** | [S-FLO-001](./05_EXECUTION_FLOW.md), [S-ARC-002](./04_ARCHITECTURE.md) | [T-FLO-001](./16_TESTS.md) |
+| **R09** | **진단 코드 정합성** | [S-ERR-001](./15_ERRORS.md), [S-SOL-005](./11_SOLVER.md) | [T-ERR-001](./16_TESTS.md) |
+| **R10** | **저널링 기반 장애 복구** | [S-PIP-005](./12_PIPELINE.md), [S-OPS-003](./19_OPERATIONS.md) | [T-OPS-002](./16_TESTS.md) |
+| **R11** | **Provenance (데이터 출처 관리)** | [S-MOD-004](./10_MODELS.md), [S-REP-003](./13_REPORTING.md) | [T-REP-001](./16_TESTS.md) |
+| **R12** | **단위 체계 일관성 (SI/IMP)** | [S-MOD-001](./10_MODELS.md), [S-FOR-001](./09_FORMULAS.md) | [T-UNIT-001](./16_TESTS.md) |
+
+## 4. 프로젝트 거버넌스 (Governance)
+
+### 4.1. 문서 우선순위 (Conflict Resolution Priority)
+문서 간 내용이 상충할 경우 다음 순서에 따라 우선순위를 결정한다.
+1.  **1순위:** `00_CONCEPT.md` (시스템의 목적 및 MVP 범위)
+2.  **2순위:** `11_SOLVER.md`, `09_FORMULAS.md` (기술적 계산 규범)
+3.  **3순위:** `04_ARCHITECTURE.md`, `10_MODELS.md` (구조적 설계 규범)
+4.  **4순위:** 기타 상세 명세 문서
+
+### 4.2. 수정 및 버전 관리 (Revision History)
+| 버전 | 일자 | 수정 내용 | 비고 |
+| :--- | :--- | :--- | :--- |
+| v0.1 | 2026-03-20 | 초기 명세서 초안 작성 | - |
+| v1.5 | 2026-03-25 | MVP 범위 확정 및 테스트 시나리오 추가 | - |
+| v4.0 | 2026-04-02 | 감사 보고서 지적 사항 반영 및 RTM 확장 (현재) | Audit Fixed |
 
 ---
 *최종 업데이트: 2026-04-02 (Audit Fixed v4.0)*

@@ -2,59 +2,45 @@
 
 FHDL 시스템은 시뮬레이션 결과를 구조화된 파일 형식으로 출력하여 외부 도구와의 연동 및 설계 검증을 지원합니다.
 
-## 1. 출력 구조 및 메타데이터
+## 1. 출력 구조 및 메타데이터 규범
 
-### 1.1 출력 디렉토리 구조
-모든 시뮬레이션 결과는 프로젝트의 `outputs/` 폴더 내에 실행 시간별로 생성됩니다.
-```text
-outputs/
-└── run_YYYYMMDD_HHMMSS/       # 시뮬레이션 실행별 고유 폴더
-    ├── Nodes_Report.csv      # 노드 상세 결과
-    ├── Pipes_Report.csv      # 배관 상세 결과
-    └── Simulation_Summary.json # 실행 요약 정보
-```
+### 1.1 [S-REP-001] 리포트 헤더 메타데이터 (Provenance Header)
+모든 출력 파일 상단에는 재현성(Reproducibility) 확보를 위해 다음 메타데이터를 반드시 포함해야 한다.
+*   **Engine:** FHDL Core v0.1 (Build 20260402)
+*   **Friction Model:** `DW` (Darcy-Weisbach) 또는 `HW` (Hazen-Williams) 명시.
+*   **Fluid Props:** Density ($\rho$), Viscosity ($\mu$) 또는 C-factor 적용값.
+*   **Source Hash:** 입력 `.fhd` 파일의 SHA-256 체크섬.
 
-### 1.2 리포트 메타데이터 (Provenance Header - M02)
-모든 출력 파일(CSV, JSON)의 상단에는 설계 타당성 재검증을 위한 다음의 메타데이터가 반드시 포함되어야 합니다. (CSV의 경우 `#` 주석 처리)
-*   **Project Name:** 프로젝트 식별자
-*   **Engine Version:** 계산을 수행한 FHDL 엔진 버전
-*   **Timestamp:** 해석 완료 시간 (ISO 8601)
-*   **Global Settings:** 유체 종류, 온도, 마찰 모델(DW/HW), 중력가속도
-*   **Input Checksum:** 원본 소스(`.fhd`)의 SHA-256 해시값
+## 2. [S-REP-002] 데이터 출처 및 컬럼 매핑 (Data Provenance Map)
 
-## 2. CSV 리포트 스키마
+리포트의 각 컬럼은 내부 모델 및 수식과 다음과 같이 매핑된다.
 
-### 2.1 Nodes_Report.csv
-각 노드의 위치, 수두, 압력 및 설계 요구 유량을 기록합니다.
+### 2.1 Nodes_Report.csv 매핑
+| 컬럼명 | 내부 소스 필드 (Entity) | 적용 공식 / 로직 |
+| :--- | :--- | :--- |
+| `Node_ID` | `Node.id` | - |
+| `X, Y, Z` | `Node.x, y, z` | DSL 입력값 또는 Default |
+| `Head` | `NetworkNode.h_total` | Pass 2 수리 평형 결과 |
+| `Pressure` | `NetworkNode.p_gauge` | [FOR-PTH-001] 수두-압력 환산 |
+| `Req Q` | `Node.required_q` | DSL `flow` 속성 정규화값 |
+| `Sizing` | `Node.sizing_mode` | `MANUAL`, `AUTO`, `DERIVED` |
 
-| 컬럼명 | 단위 (Metric) | 단위 (Imperial) | 설명 |
-| :--- | :--- | :--- | :--- |
-| `Node_ID` | - | - | 노드 식별자 |
-| `Type` | - | - | NodeType (TANK, PUMP, JUNCTION 등) |
-| `X, Y, Z` | m | ft | 3D 좌표 |
-| `Head` | m | ft | 계산된 총 수두 |
-| `Pressure` | MPa | PSI | 노드에서의 정수압 |
-| `Surge` | MPa | PSI | 수충격으로 인한 추가 압력 |
-| `Req Q` | L/min | GPM | 설계 시 설정된 요구 유량 |
+### 2.2 Pipes_Report.csv 매핑
+| 컬럼명 | 내부 소스 필드 (Entity) | 적용 공식 / 로직 |
+| :--- | :--- | :--- |
+| `Pipe_ID` | `Pipe.id` | - |
+| `Diameter` | `Pipe.diameter` | `SizingMode`에 따른 확정치 |
+| `Velocity` | `NetworkEdge.v_actual` | [FOR-V-001] 연속 방정식 ($Q/A$) |
+| `HeadLoss` | `NetworkEdge.h_loss_total` | [FOR-DW-001] 또는 [FOR-HW-001] |
+| `SurgeIdx` | `NetworkEdge.surge_index` | [S-SOL-005] 간이 수격 위험도 |
+| `Formula` | `Provenance.formula_id` | 실제 계산에 적용된 공식 ID |
 
-### 2.2 Pipes_Report.csv
-각 배관의 기하학적 정보와 유동 해석 결과를 기록합니다.
+## 3. 요약 리포트 명세 (Simulation_Summary.json)
 
-| 컬럼명 | 단위 (Metric) | 단위 (Imperial) | 설명 |
-| :--- | :--- | :--- | :--- |
-| `Pipe_ID` | - | - | 배관 식별자 |
-| `From, To` | - | - | 연결 노드 ID |
-| `Length` | m | ft | 계산된 배관 실길이 |
-| `Diameter` | mm | in | 배관 내경 |
-| `Velocity` | m/s | ft/s | 유속 |
-| `HeadLoss` | m | ft | 마찰 및 국부 손실의 합 |
-| `Flow` | L/min | GPM | 계산된 실제 유량 |
-
-## 3. 요약 데이터 스키마 (Simulation_Summary.json)
-
-시뮬레이션 전체의 메타데이터와 시스템 통계를 저장합니다.
-*   **metadata:** `Provenance Header`의 모든 항목 및 사용된 유체 밀도(`actual_density`) 등.
-*   **results:** 총 노드 수, 총 배관 수, 수렴 여부 등 요약 정보.
+### 3.1 [S-REP-003] 시스템 통계 및 수렴 정보
+*   **convergence:** 수렴 여부(`True/False`), 최종 잔차(Residual), 반복 횟수.
+*   **worst_case:** 최불리 경로 ID, 해당 경로의 총 손실, 요구 펌프 양정.
+*   **sizing_summary:** `auto`로 산정된 모든 부품의 이전/이후 사양 비교표.
 
 ## 4. 데이터 표기 규칙
 

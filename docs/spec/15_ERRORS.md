@@ -50,36 +50,30 @@ FHDL 프로그램은 입력, 검증, 구조 해석, 수리 계산 및 결과 생
     *   *Action:* `08. LANGUAGE.md`에 명시된 표준 단위(m, LPM, MPa 등)를 사용하세요.
 
 ### 5.2 Semantic Errors (SEM)
-*   **SEM001 (Duplicate ID):** 동일한 식별자가 중복 선언됨.
-    *   *Action:* 구성요소의 ID를 고유하게 수정하세요.
-*   **SEM002 (Undefined Reference):** 존재하지 않는 ID를 참조함.
-    *   *Action:* `connect` 문에 사용된 ID가 위에서 정의되었는지 확인하세요.
-*   **SEM003 (Missing Property):** 필수 속성(예: pipe의 length)이 누락됨.
-    *   *Action:* 해당 구성요소의 필수 속성을 입력하세요.
+*   **[S-ERR-001] SEM001~003:** 중복 ID, 참조 누락, 필수 속성 누락 (기존 유지).
+*   **[S-ERR-002] SEM005 (Altitude Guard):** 노드 고도가 허용 범위를 벗어남 ($-100 \sim 10000m$).
+    *   *Remedy:* 실제 지형 고도 또는 상대 고도를 범위 내로 조정하세요.
+*   **[S-ERR-003] SEM006 (Temperature Guard):** 유체 온도가 허용 범위를 벗어남 ($0 \sim 100^\circ C$).
+    *   *Remedy:* `system` 블록의 `temp` 설정을 상온 범위로 수정하세요.
+*   **[S-ERR-004] SEM007 (Length Guard):** 배관 길이가 0 이하거나 유효하지 않음.
+    *   *Remedy:* 배관의 `length` 속성에 양수 값을 입력하세요.
 
 ### 5.3 Network Errors (NET)
-*   **NET001 (Isolated Node):** 어떤 연결도 없는 고립 노드 발견.
-    *   *Action:* `connect` 문을 사용하여 네트워크에 포함시키거나 삭제하세요.
-*   **NET002 (No Source Path):** 공급원(Tank/Source)에서 시작되지 않는 경로 존재.
-    *   *Action:* 모든 배관은 반드시 수로나 펌프를 통해 공급원과 연결되어야 합니다.
-*   **NET003 (Unreachable Terminal):** 말단 장치까지 도달할 수 없는 경로.
-    *   *Action:* 연결 방향(`->`)이 올바른지 확인하세요.
+*   **[S-ERR-005] NET001~003:** 고립 노드, 공급원 없음, 도달 불가 (기존 유지).
+*   **[S-ERR-006] NET004 (Complex Loop Warning):** v0.1에서 지원하지 않는 복합 루프망 탐지.
+    *   *Remedy:* 병렬 배관 이외의 루프 구조를 단순 트리형으로 수정하거나 v0.2 업그레이드를 대기하세요.
+*   **[S-ERR-007] NET005 (Dead Loop Error):** 공급원 없는 순환 루프 발견.
+    *   *Remedy:* 루프를 끊거나 반드시 외부 공급원(`Tank/Source`)과 연결하세요.
 
 ### 5.4 Calculation Errors (CAL)
-*   **CAL001 (Insufficient Data):** 계산에 필요한 수치가 부족함.
-    *   *Action:* 유량이나 관경 등 최소 하나의 결정 변수가 필요합니다.
-*   **CAL002 (No Sizing Solution):** 허용 유속을 만족하는 표준 관경을 찾을 수 없음.
-    *   *Action:* 요구 유량을 줄이거나 유속 제한(`velocity_max`)을 완화하세요.
-*   **CAL003 (Solver Divergence):** 수리 해석이 수렴하지 않고 발산함.
-    *   *Action:* 네트워크에 루프가 있는지, 혹은 유량이 너무 극단적인지 확인하세요.
+*   **[S-ERR-008] CAL001~003:** 데이터 부족, 수렴 실패 (기존 유지).
+*   **[S-ERR-009] CAL005 (Sizing Failed):** 모든 표준 관경 규격이 유속 제약조건을 위반함.
+    *   *Remedy:* `velocity_max` 제한을 완화하거나 요구 유량을 줄이세요.
 
 ### 5.5 Design Warnings (WRN)
-*   **WRN001 (Velocity Out of Range):** 유속이 권장 범위를 벗어남.
-    *   *Action:* 관경을 조정하여 적정 유속(1.0~2.5m/s)을 유지하세요.
-*   **WRN002 (Pressure Low):** 말단 요구압력보다 실제 압력이 낮음.
-    *   *Action:* 펌프 양정을 높이거나 배관 손실을 줄이세요.
-*   **WRN003 (Cavitation Risk):** 해당 지점의 압력이 증기압에 근접하여 캐비테이션 위험 발생.
-    *   *Action:* 펌프 흡입측 손실을 줄이거나 펌프 고도를 낮추세요.
+*   **[S-ERR-010] WRN001~003:** 유속 위반, 저압, 캐비테이션 위험 (기존 유지).
+*   **[S-ERR-011] WRN004 (High Surge Risk):** 정상상태 유속 기반 수격 위험 지수 초과.
+    *   *Remedy:* 유속을 낮추기 위해 관경을 키우거나 밸브 폐쇄 시간을 조절하세요.
 
 ---
 [목차로 돌아가기](./INDEX.md)

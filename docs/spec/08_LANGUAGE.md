@@ -9,65 +9,74 @@ FHDL은 유체 설비의 구성과 연결 관계를 기술하기 위한 **선언
 *   **연결 분리:** 구성요소의 속성 정의와 네트워크 위상(Topology) 정의를 분리합니다.
 *   **단위 통합:** 값과 단위를 결합하여 표기함으로 해석 오류를 방지합니다.
 
-## 2. 상위 구성요소 (Top-level Blocks)
+## 2. DSL-to-Entity 매핑 규범 (Mapping Rules)
 
-### 2.1 `system` (최상위 블록)
-설계 프로젝트의 메타데이터와 전역 설정을 정의합니다.
-*   **속성:** 
-    *   `unit_system`: `METRIC` | `IMPERIAL`
-    *   `fluid`: `water` | `brine` (기본값: water)
-    *   `temp`: 유체 온도 (기본값: 20.0)
-    *   `friction_model`: `DW` (Darcy-Weisbach) | `HW` (Hazen-Williams) - **필수 선택**
+파싱된 DSL 블록은 다음 규칙에 따라 내부 데이터 모델(`10_MODELS.md`)의 엔티티로 정규화된다.
 
-### 2.2 `source` / `tank` (수원)
-*   `source`: 외부 급수원 등 추상적 수원.
-*   `tank`: 수위 동특성 및 월류를 지원하는 저수조.
-*   **속성:** `volume`, `level_min`, `level_max`, `elevation`, `overflow_level`, `overflow_pipe`.
+| DSL 키워드 | 내부 엔티티 (Class) | 주요 속성 매핑 | 비고 |
+| :--- | :--- | :--- | :--- |
+| **`system`** | `FluidSystem` | `unit_system`, `fluid`, `temp` | 전역 컨텍스트 |
+| **`tank`** | `Tank` | `volume`, `level_max`, `elevation` | 공급원/저장소 |
+| **`source`** | `Tank` | `type='source'`, `elevation` | 무한 공급원 |
+| **`pump`** | `Pump` | `flow`, `head`, `efficiency` | 가압 장치 |
+| **`pipe`** | `Pipe` | `length`, `diameter`, `material` | 연결 배관 |
+| **`nozzle`** | `Terminal` | `type='nozzle'`, `flow`, `k_factor` | 유량 소모 말단 |
+| **`sprinkler`**| `Terminal` | `type='sprinkler'`, `required_p` | 압력 기준 말단 |
+| **`component`**| `Component` | `loss_k`, `type='custom'` | 범용 기기 |
 
-### 2.3 `pump` (가압 장치)
-*   **속성:** `flow`, `head`, `elevation`, `efficiency`, `power`.
-*   **특징:** `flow`와 `head`를 `auto`로 설정하여 시스템 요구치에 맞는 사양을 자동 산정할 수 있습니다.
+### 2.1 [S-DSL-001] 산정 모드(Sizing Mode) 정규화
+각 수치 속성은 다음 세 가지 모드를 가지며, 내부 모델의 `SizingState` 필드로 변환된다.
+*   **`manual` (고정값):** 사용자가 직접 입력한 값. 계산 엔진은 이를 상수로 취급한다. (예: `diameter = 50mm;`)
+*   **`auto` (자동산정):** 시스템이 설계 제약에 따라 결정할 값. 내부적으로 `None` 또는 `Pending` 상태로 초기화된다. (예: `diameter = auto;`)
+*   **`derived` (유도값):** 타 속성으로부터 물리적으로 유도되는 값. (예: `flow = derived;`)
 
-### 2.4 `pipe` (배관)
-*   **속성:** `length` (필수), `diameter`, `material`, `roughness`, `loss_k`, `c_factor`.
+## 3. 세부 문법 명세 (Detailed Syntax)
 
-### 2.5 `nozzle` / `sprinkler` (말단 장치)
-*   **속성:** `flow`, `required_p`, `k_factor`, `jet_height`, `count`.
-*   **특징:** `k_factor` 입력 시 $Q = K\sqrt{P}$ 특성식으로 해석하며, 미입력 시 `flow`를 고정 요구량으로 취급합니다.
+### 3.1 [S-DSL-002] `system` 블록 및 마찰 모델 설정
+```fhdl
+system my_project {
+    unit_system = METRIC;
+    fluid = water;
+    temp = 25.0degC;
+    friction_model = DW; // DW(Darcy-Weisbach) 또는 HW(Hazen-Williams)
+}
+```
 
-### 2.6 `component` (범용 구성요소 - M02)
-정의되지 않은 특수 기기(열교환기, 감압밸브, 월류보 등)를 정의할 때 사용합니다.
-*   **속성:** `type`, `loss_k` (고정 손실), `loss_curve` (유량별 손실 곡선), `boundary_p` (고정 압력 경계).
+### 3.2 [S-DSL-003] 배관 및 마찰 파라미터
+```fhdl
+pipe p1 {
+    length = 10.5m;
+    diameter = auto; // 관경 자동 산정 요청
+    material = "PVC";
+    roughness = 0.01mm; // DW용 조도
+    c_factor = 140;     // HW용 C-계수
+}
+```
 
-### 2.7 `constraint` (설계 제약조건)
-*   **속성:** `velocity_min`, `velocity_max`, `safety_factor`, `tank_runtime_min`.
+## 4. 템플릿 및 재사용 (Reusability)
 
-## 3. 위상 정의 (Connections)
+### 4.1 [S-DSL-004] `template` 정의 및 `instance` 호출
+반복되는 설비 군을 하나의 템플릿으로 정의하여 재사용할 수 있다.
 
-### 3.1 `connect` 문 및 포트 선택자 (C01)
-`->` 연산자를 사용하여 구성요소 간의 상류-하류 관계를 정의합니다.
-*   **포트 선택자:** `.in`, `.out`을 통해 방향성 명시 가능.
+**정의 문법:**
+```fhdl
+template sprinkler_branch(id_prefix, flow_val) {
+    pipe ${id_prefix}_p { length = 2m; diameter = auto; }
+    sprinkler ${id_prefix}_s { flow = ${flow_val}; }
+    connect ${id_prefix}_p -> ${id_prefix}_s;
+}
+```
 
-### 3.2 분기 및 다중 연결
-*   **범위 연결:** `connect main_1 -> n1..n10;` (다중 말단 동시 연결)
+**호출 문법:**
+```fhdl
+instance branch_1 = sprinkler_branch("B1", 15Lpm);
+instance branch_2 = sprinkler_branch("B2", 15Lpm);
+```
 
-## 4. 값 표현 및 산정 모드
-
-### 4.1 값과 단위 (Value with Units)
-모든 수치 데이터는 단위를 포함할 수 있으며, 파서는 이를 내부 표준 단위(SI)로 변환합니다.
-
-### 4.2 산정 모드 (Sizing Modes)
-*   **`manual` / `auto` / `derived`** 지원.
-
-## 5. 반복 및 범위 선언 (Loops & Ranges)
-*   `nozzle n1 to n10 { ... }`
-
-## 6. 템플릿 및 재사용 (Reusability - M01)
-
-대규모 프로젝트의 반복되는 설비 구조를 효율적으로 정의하기 위해 템플릿 기능을 제공합니다.
-
-### 6.1 `template` 정의 및 `instance` 사용
-(상세 문법 생략 - 이전 작업 내용 유지)
+### 4.2 [S-DSL-005] 범위 연결(Range Connection)
+```fhdl
+connect main_pipe -> branch_1..branch_10; // 다중 연결 단축 표기
+```
 
 ---
 [목차로 돌아가기](./INDEX.md)

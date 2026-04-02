@@ -22,40 +22,55 @@ FHDL 프로그램은 입력 문법 처리, 의미 검증, 계산 수행, 결과 
 *   **ConnectNode:** `->` 연산자로 연결된 경로 세그먼트.
 
 ### 2.2 Semantic Model (Entities)
-AST를 실제 설계 객체로 변환하고 단위 정규화 및 참조 해결이 완료된 상태입니다. 모든 수치는 내부적으로 SI 표준 단위를 사용합니다.
 
-#### [Entity 속성 제약 조건표 (A06/C01)]
+AST를 실제 설계 객체로 변환하고 단위 정규화 및 참조 해결이 완료된 상태이다.
 
-| Entity | 필드명 | 필수 | 타입 | 허용 범위 (SI) | 기본값 |
+#### [S-MOD-001] 엔티티 필드 상세 명세 (Entity Specifications)
+
+| Entity | 필드명 | 필수 | 타입 | 제약 조건 (SI 단위 기준) | 기본값 |
 | :--- | :--- | :---: | :--- | :--- | :--- |
-| **Tank** | `volume` | N | float | $> 0$ | 무제한 |
-| | `elevation` | Y | float | -100 ~ 10000 | 0.0 |
-| | `overflow_level` | N | float | $\le level_{max}$ | - |
-| **Pump** | `flow` | N | float/auto | $\ge 0$ | `auto` |
-| | `head` | N | float/auto | $\ge 0$ | `auto` |
-| | `efficiency` | N | float | 0.0 ~ 1.0 | 0.75 |
-| **Pipe** | `length` | Y | float | $> 0$ | - |
-| | `diameter` | N | float/auto | $> 0$ | `auto` |
-| | `roughness` | N | float | $> 0$ | 0.045 (Steel) |
-| **Terminal** | `required_q` | N | float | $\ge 0$ | 0.0 |
-| | `required_p` | N | float | $\ge 0$ | 0.0 |
-| | `k_factor` | N | float | $\ge 0$ | 오리피스 특성 계수 |
+| **Tank** | `elevation` | Y | float | $-100 \sim 10000 m$ | 0.0 |
+| | `volume` | N | float | $> 0 m^3$ | `INF` |
+| | `level_max` | N | float | $> 0 m$ | 2.0 |
+| **Pump** | `elevation` | Y | float | $-100 \sim 10000 m$ | 0.0 |
+| | `flow` | N | float | `SizingMode` (auto/manual) | `auto` |
+| | `head` | N | float | `SizingMode` (auto/manual) | `auto` |
+| | `efficiency` | N | float | $0.1 \sim 1.0$ | 0.75 |
+| **Pipe** | `length` | Y | float | $> 0 m$ | - |
+| | `diameter` | N | float | `SizingMode` (auto/manual) | `auto` |
+| | `material` | N | string | `APPENDIX_A` 참조 | "Steel" |
+| | `roughness` | N | float | $> 0 mm$ (DW용) | 0.045 |
+| | `c_factor` | N | float | $50 \sim 150$ (HW용) | 120 |
+| **Terminal** | `elevation` | Y | float | $-100 \sim 10000 m$ | 0.0 |
+| | `required_q` | N | float | $\ge 0 m^3/h$ | 0.0 |
+| | `required_p` | N | float | $\ge 0 Pa$ (Gauge) | 0.0 |
+| | `k_factor` | N | float | $\ge 0$ | - |
 
-*   **Nullable 정책:** '필수'가 N인 항목은 입력 누락 시 기본값이 적용되거나 `auto` 산정 로직으로 전이됩니다.
-*   **ID 규칙:** 모든 엔티티는 시스템 내에서 유일한 문자열 ID를 가져야 합니다 (정규식: `^[a-zA-Z_][a-zA-Z0-9_]*$`).
+#### [S-MOD-002] 산정 상태 모델 (SizingState)
+모든 가변 수치 속성(`flow`, `head`, `diameter` 등)은 내부적으로 다음 구조를 가진다.
+*   **`mode`:** `MANUAL` (사용자 고정), `AUTO` (시스템 산정), `DERIVED` (물리적 유도).
+*   **`value`:** 현재 할당된 SI 수치값.
+*   **`source_id`:** `AUTO`인 경우 선정을 결정한 제약조건 ID (예: `R-NFR-008`).
 
-### 2.3 Network Model (Calculation Graph - C02)
-물리적 계산을 수행하기 위한 노드-엣지 정규화 모델입니다.
+### 2.3 Network Model (Calculation Graph)
 
-#### [수리적 정규화 규칙]
-1.  **Node Responsibility:** 모든 `NetworkNode`는 해당 지점의 **정수두(Static Head, $z$)**와 **압력수두(Pressure Head, $P/\rho g$)**를 보유합니다.
-2.  **Edge Responsibility:** 모든 `NetworkEdge` (배관)는 구간 내에서 발생하는 **마찰 손실($h_f$)**과 **국부 손실($h_k$)**을 계산하는 책임을 가집니다.
-3.  **Virtual Node Injection:** 두 개의 배관이 직접 연결되는 경우, 시스템은 자동으로 그 사이에 `VirtualJunction` 노드를 생성합니다.
+#### [S-MOD-003] 네트워크 노드 및 엣지 속성
+*   **NetworkNode:**
+    *   `z`: 정수두 (m).
+    *   `h_total`: 총 수두 (m).
+    *   `p_gauge`: 게이지 압력 (Pa).
+    *   `is_boundary`: 경계 조건 노드 여부 (Source/Terminal).
+*   **NetworkEdge:**
+    *   `q_actual`: 실제 흐르는 유량 ($m^3/h$).
+    *   `v_actual`: 실제 유속 ($m/s$).
+    *   `h_loss_f`: 마찰 손실 수두 (m).
+    *   `h_loss_k`: 국부 손실 수두 (m).
 
-#### [수리적 경계 조건 (Boundary Conditions)]
-*   **Fixed Head Node (Source/Tank):** 수두가 외부 조건에 의해 고정된 노드.
-*   **Atmospheric Node (Weir/Overflow):** 압력이 항상 대기압(0 Pa Gauge)으로 유지되어야 하는 노드.
-*   **Characteristic Node (Terminal):** $Q = K \sqrt{\Delta P}$ 비선형 특성식을 만족해야 하는 노드.
+### 2.4 [S-MOD-004] 데이터 출처 모델 (Provenance Model)
+계산 결과의 투명성을 위해 각 결과값은 `ProvenanceItem`을 보유한다.
+*   **`formula_id`:** 사용된 계산 공식 ID (예: `FOR-DW-001`).
+*   **`input_references`:** 계산에 입력된 엔티티 ID 및 필드 목록.
+*   **`assumptions`:** 적용된 엔지니어링 기본값(Default) 목록.
 
 ### 2.4 Calculation Model (Calc States)
 각 실행 시점의 계산 상태를 저장하며, 입력 모델과 분리하여 관리합니다.

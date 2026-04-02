@@ -38,25 +38,37 @@ $$H = \frac{P}{\rho g}$$
 *   **최소 관경 도출:** $D_{min} = \sqrt{\frac{4Q}{\pi V_{max}}}$
     *   시스템은 $D \ge D_{min}$을 만족하는 최소 표준 관경을 라이브러리에서 선정합니다.
 
-## 3. 손실수두 계산식
+## 3. 손실수두 계산식 (Head Loss Formulas)
 
-### 3.1 마찰 손실 (Darcy-Weisbach)
+FHDL 시스템은 설정된 마찰 모델(`friction_model`)에 따라 다음 공식을 사용하여 손실수두를 산정한다.
+
+### 3.1 [FOR-DW-001] 마찰 손실 (Darcy-Weisbach)
+가장 정밀한 마찰 손실 계산식으로, 모든 유동 조건에서 기본 적용된다.
 $$h_f = f \cdot \frac{L}{D} \cdot \frac{V^2}{2g}$$
-*   $f$: 마찰계수 (재질별 기본값 또는 Colebrook 식 적용)
+*   **[FOR-DW-002] 마찰계수 ($f$):** 
+    *   Laminar ($Re < 2000$): $f = 64/Re$
+    *   Turbulent ($Re \ge 2000$): Colebrook-White 식을 통한 반복 계산 또는 Swamee-Jain 근사식 적용.
 
-### 3.2 국부 손실 (Minor Loss)
+### 3.2 [FOR-HW-001] 마찰 손실 (Hazen-Williams)
+소방 설비 및 상수도망 해석 시 관례적으로 사용하며, 물(Water) 전용 공식이다.
+$$h_f = 10.67 \cdot L \cdot Q^{1.85} \cdot C^{-1.85} \cdot D^{-4.87}$$
+*   **입력 단위 규범:** $L(m)$, $Q(m^3/s)$, $D(m)$.
+*   **[FOR-HW-002] C-계수 ($C$):** 배관 재질에 따른 마찰계수 (기본값: Steel=120, PVC=140).
+*   **제한:** 물 이외의 유체나 고온 유체에는 적용을 권장하지 않으며, 이 경우 시스템은 경고를 발생시킨다.
+
+### 3.3 [FOR-LOC-001] 국부 손실 (Minor Loss)
 $$h_k = K \cdot \frac{V^2}{2g}$$
-*   $K$: 피팅/밸브의 저항 계수 (LibraryManager 자동 산출 또는 수동 입력)
+*   $K$: 피팅/밸브의 저항 계수 (LibraryManager 자동 산출 또는 수동 입력).
 
 ## 4. 총 요구양정 및 최불리 경로
 
-### 4.1 경로별 요구양정 ($H_{req, path}$)
+### 4.1 [FOR-PTH-001] 경로별 요구양정 ($H_{req, path}$)
 $$H_{req, path} = (z_{terminal} - z_{source}) + \sum (h_f + h_k) + H_{terminal}$$
-*   $z$: 고도(m), $\sum (h_f + h_k)$: 경로 내 누적 손실수두
+*   $z$: 고도(m), $\sum (h_f + h_k)$: 경로 내 누적 손실수두.
 
-### 4.2 시스템 총 요구양정
+### 4.2 [FOR-PTH-002] 시스템 총 요구양정
 $$H_{req, total} = \max(H_{req, path, 1}, H_{req, path, 2}, \dots, H_{req, path, n})$$
-*   가장 큰 값을 가지는 경로를 **최불리 경로(Worst-case Path)**로 특정합니다.
+*   가장 큰 값을 가지는 경로를 **최불리 경로(Worst-case Path)**로 특정한다.
 
 ## 5. 자동 선정 및 판정 규칙
 

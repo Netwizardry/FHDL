@@ -2,33 +2,41 @@
 
 FHDL GUI는 텍스트 기반 설계를 지원하는 통합 개발 환경(IDE)으로, 실시간 설계 검증과 비동기 해석 엔진을 제공합니다.
 
-## 1. 메인 레이아웃 및 구성 요소
+## 1. 메인 레이아웃 및 5대 핵심 패널 (Standard Layout)
 
-| 구성 요소 | 역할 | 상세 기능 |
+FHDL GUI는 `03_UI_UX_REQ.md`에서 정의한 5대 패널 체제를 엄격히 준수하며, 각 패널은 독립적인 위젯 클래스로 구현된다.
+
+| ID | 패널 명칭 (Panel Name) | 주요 역할 및 기능 |
 | :--- | :--- | :--- |
-| **FHDL Editor** | 코드 작성 | 구문 강조, 비동기 린팅, 에러 하이라이팅 |
-| **Result Viewer** | 결과 시각화 | 계산 결과의 테이블 표시 및 캔버스 상의 경고 시각화 |
-| **System Log** | 상태 모니터링 | 해석 진행 상황, 경고(Vacuum, Cavitation) 및 에러 로그 출력 |
-| **Dictionary** | 도움말 | FHDL 주요 문법 및 키워드에 대한 빠른 참조 패널 |
+| **S-GUI-001** | **Project Selection** | 파일 I/O, 최근 프로젝트 목록, 샘플 로드 (Sidebar 상단) |
+| **S-GUI-002** | **FHDL Editor** | 구문 강조, 비동기 린팅, 에러 하이라이팅 (Center-Left) |
+| **S-GUI-003** | **Topology Viewer** | 네트워크 그래프 시각화, 최불리 경로 강조 (Center-Right) |
+| **S-GUI-004** | **Result Dashboard** | 수치 해석 결과 테이블, 선정 근거 툴팁 (Bottom-Left) |
+| **S-GUI-005** | **Error/Warning Center** | 진단 메시지 통합 표시, 소스 점프 기능 (Bottom-Right) |
 
-## 2. 반응성 및 동기화 전략 (UX & Sync - C02)
+## 2. 반응성 및 성능 규범 (Performance & UX)
 
-### 2.1 비동기 린팅 (Async Linter)
-대규모 문서 편집 시 타이핑 반응성을 보장하기 위해 다음 전략을 적용합니다.
-*   **Worker Thread:** 린팅 엔진(`FHDLLinter`)은 메인 UI 쓰레드와 분리된 워커 쓰레드에서 비동기적으로 동작합니다.
-*   **Debounce:** 사용자가 타이핑을 멈춘 후 **300ms**가 경과했을 때만 린팅 프로세스를 시작하여 불필요한 계산을 방지합니다.
-*   **Interruptible:** 새로운 타이핑 이벤트 발생 시 진행 중인 린팅 작업을 즉시 취소하고 대기 상태로 전환합니다.
+### 2.1 [S-GUI-006] 비동기 반응성 가이드
+*   **Debounce:** 텍스트 입력 시 린팅 프로세스 시작 전 **300ms**의 대기 시간을 유지하여 입력 지연을 방지한다.
+*   **Worker Threading:** 모든 I/O 및 솔버 계산은 메인 UI 쓰레드와 분리된 `QThread`에서 수행되어야 한다.
 
-### 2.2 진단 시각화 및 스타일 가이드 (Visualization - T01)
-네트워크 캔버스에서 각 진단 항목은 다음과 같은 시각적 스타일로 설계자에게 고지됩니다.
+### 2.2 [S-GUI-007] 성능 측정 및 벤치마크 환경
+비기능 요구사항(`R-NFR-009`) 검증을 위해 다음 도구와 환경을 사용한다.
+*   **측정 도구:** Qt Test Framework, `timeit` 모듈 및 전용 프레임 프로파일러.
+*   **기준 환경:** CPU 4-Core 2.5GHz, RAM 8GB 이상.
+*   **데이터셋:** 1,000개 노드 이상의 복합 네트워크 데이터셋(`benchmarks/scale_test.fhd`).
 
-| 상태 | 시각적 표현 | 비고 |
+## 3. [S-GUI-008] 진단 시각화 및 스타일 가이드
+
+네트워크 캔버스에서 각 진단 항목은 다음의 시각적 스타일을 따른다.
+
+| 상태 | 시각적 표현 | 대응 진단 코드 |
 | :--- | :--- | :--- |
-| **Normal** | Blue/Gray Line | 정상 작동 배관 |
-| **Warning (Velocity)** | Orange Thicker Line | 유속 초과 (WRN001) |
-| **Warning (Vacuum)** | Purple Blinking Node | 진공/캐비테이션 위험 (WRN003) |
-| **Error (Disconnected)** | Red Dashed Line | 연결 단절 (NET001) |
-| **Calculated Flow** | Moving Arrows | 유량 방향 및 상대적 크기 표시 |
+| **Normal** | Blue/Gray (Solid) | - |
+| **Warning (Velocity)** | Orange (Thick Solid) | `WRN001` |
+| **Warning (Cavitation)** | Purple (Blinking) | `WRN003` |
+| **Warning (Surge)** | Yellow (Dashed) | `WRN004` |
+| **Error (Topology)** | Red (Thick Dashed) | `NET001~005` |
 
 ## 3. 핵심 워크플로우
 
