@@ -1,5 +1,8 @@
 # 02. 핵심 기능 요구사항 (Functional Requirements)
 
+**Status:** Active | **Version:** v4.0 | **Last Revised:** 2026-04-02 | **Supersedes:** v1.5
+
+
 FHDL 시스템은 설계자의 의도를 해석하여 물리적으로 타당한 설비 사양을 자동으로 도출하기 위해 다음과 같은 기능을 수행해야 합니다. (A04: 입출력 조건 중심 명세)
 
 ## 1. 설계 입력 및 문법 검증 (Input & Validation)

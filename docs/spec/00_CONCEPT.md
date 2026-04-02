@@ -1,5 +1,8 @@
 # 00. 목적 및 범위 (Objectives & Scope)
 
+**Status:** Active | **Version:** v4.0 | **Last Revised:** 2026-04-02 | **Supersedes:** v1.5
+
+
 FHDL(Fluid Hardware Description Language)은 유체 설비 설계의 의도를 언어로 입력받아 산정 로직을 자동화하는 시스템입니다.
 
 ## 1. FHDL의 목적

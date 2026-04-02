@@ -1,5 +1,8 @@
 # 01. 핵심 구성요소 (Core Components)
 
+**Status:** Active | **Version:** v4.0 | **Last Revised:** 2026-04-02 | **Supersedes:** v1.5
+
+
 FHDL 시스템은 유기적으로 연결된 8개의 핵심 계층(Layers)으로 구성됩니다.
 
 ## 1. 사용자 및 제어 계층 (User & Control)

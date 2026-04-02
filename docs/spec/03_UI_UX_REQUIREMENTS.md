@@ -1,5 +1,8 @@
 # 04. UI/UX 요구사항 (UI/UX Requirements)
 
+**Status:** Active | **Version:** v4.0 | **Last Revised:** 2026-04-02 | **Supersedes:** v1.5
+
+
 FHDL 시스템의 사용자 인터페이스는 설계자가 설비를 기술하고 계산 결과를 검증하여 최종 사양을 도출하는 전 과정을 효율적으로 지원해야 합니다.
 
 ## 1. UI/UX 기본 원칙

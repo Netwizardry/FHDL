@@ -1,5 +1,8 @@
 # 16. 오류 처리 및 진단 메시지 명세
 
+**Status:** Active | **Version:** v4.0 | **Last Revised:** 2026-04-02 | **Supersedes:** v1.5
+
+
 FHDL 프로그램은 입력, 검증, 구조 해석, 수리 계산 및 결과 생성의 모든 단계에서 발생하는 문제와 경고를 구조화된 진단 정보로 생성하여 사용자에게 제시해야 합니다.
 
 ## 1. 진단 기본 원칙
@@ -66,12 +69,17 @@ FHDL 프로그램은 입력, 검증, 구조 해석, 수리 계산 및 결과 생
     *   *Remedy:* 루프를 끊거나 반드시 외부 공급원(`Tank/Source`)과 연결하세요.
 
 ### 5.4 Calculation Errors (CAL)
-*   **[S-ERR-008] CAL001~003:** 데이터 부족, 수렴 실패 (기존 유지).
+*   **[S-ERR-008] CAL001 (Missing Data for Calculation):** 계산에 필요한 데이터(밀도, 점도, 마찰계수 등)를 도출할 수 없음. (조건: 물리적 상수 평가 실패, Action: 유체 온도나 파이프 재질을 올바르게 설정하세요, Pipeline: Calculation)
+*   **CAL002 (Convergence Failure):** 유량/압력 계산 루프가 최대 반복 횟수 내에 수렴하지 않음. (조건: Newton-Raphson 최대 반복 도달, Action: 네트워크 구조를 단순화하거나 초기값을 조정하세요, Pipeline: Calculation)
+*   **CAL003 (Invalid Operation):** 0으로 나누기 등의 수학적 연산 오류. (조건: 유량 0 상태에서의 마찰 손실 등, Action: 비정상적인 파라미터나 0값을 확인하세요, Pipeline: Calculation)
 *   **[S-ERR-009] CAL005 (Sizing Failed):** 모든 표준 관경 규격이 유속 제약조건을 위반함.
     *   *Remedy:* `velocity_max` 제한을 완화하거나 요구 유량을 줄이세요.
 
 ### 5.5 Design Warnings (WRN)
-*   **[S-ERR-010] WRN001~003:** 유속 위반, 저압, 캐비테이션 위험 (기존 유지).
+*   **[S-ERR-010] WRN001 (Velocity Violation):** 계산된 유속이 권장/제약 범위를 벗어남. (조건: V < V_min 또는 V > V_max, Severity: WARNING, Action: 관경을 조정하거나 유량을 변경하세요, Pipeline: Rules)
+*   **WRN002 (Low Pressure):** 노드의 압력이 요구 압력(P_req)보다 낮음. (조건: P_actual < P_req, Severity: WARNING, Action: 펌프 양정을 키우거나 마찰 손실을 줄이세요, Pipeline: Rules)
+*   **WRN003 (Cavitation Risk):** 펌프 흡입측 유효흡입수두(NPSHa)가 요구치(NPSHr)보다 부족함. (조건: NPSHa < NPSHr * 1.1, Severity: WARNING, Action: 수조 수위를 높이거나 흡입관의 손실을 줄이세요, Pipeline: Rules)
+*   **WRN005 (Vacuum Limit):** 계산된 압력이 진공 한계치(-1.0e5 Pa)에 도달함. (조건: P <= -100,000 Pa, Severity: WARNING, Action: 극단적인 부압 원인(수두 차, 마찰)을 확인하세요, Pipeline: Rules)
 *   **[S-ERR-011] WRN004 (High Surge Risk):** 정상상태 유속 기반 수격 위험 지수 초과.
     *   *Remedy:* 유속을 낮추기 위해 관경을 키우거나 밸브 폐쇄 시간을 조절하세요.
 

@@ -1,5 +1,8 @@
 # 부록 A. 기본 테이블 및 기본값 규칙 (Defaults & Tables)
 
+**Status:** Active | **Version:** v4.0 | **Last Revised:** 2026-04-02 | **Supersedes:** v1.5
+
+
 FHDL MVP(v0.1)는 사용자가 모든 설계 파라미터를 입력하지 않아도 합리적인 설계가 가능하도록 본 부록에 정의된 표준 규칙과 기본값을 사용합니다.
 
 ## 1. 기본 물성 및 단위 규칙

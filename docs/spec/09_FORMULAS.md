@@ -1,5 +1,8 @@
 # 10. 계산식 및 판정 규칙 명세
 
+**Status:** Active | **Version:** v4.0 | **Last Revised:** 2026-04-02 | **Supersedes:** v1.5
+
+
 FHDL 시스템의 모든 수치 해석은 본 문서에 정의된 물리 공식과 엔지니어링 판정 규칙을 따릅니다.
 
 ## 1. 단위 및 물리 상수
@@ -34,7 +37,7 @@ $$H = \frac{P}{\rho g}$$
 *   **시스템 총유량:** $Q_{total} = \sum Q_{all\_terminals}$
 
 ### 2.3 유속 및 관경 산정
-*   **유속 계산:** $V = \frac{4Q}{\pi D^2}$
+*   **[FOR-V-001] 유속 계산:** $V = \frac{4Q}{\pi D^2}$
 *   **최소 관경 도출:** $D_{min} = \sqrt{\frac{4Q}{\pi V_{max}}}$
     *   시스템은 $D \ge D_{min}$을 만족하는 최소 표준 관경을 라이브러리에서 선정합니다.
 
@@ -49,7 +52,7 @@ $$h_f = f \cdot \frac{L}{D} \cdot \frac{V^2}{2g}$$
     *   Laminar ($Re < 2000$): $f = 64/Re$
     *   Turbulent ($Re \ge 2000$): Colebrook-White 식을 통한 반복 계산 또는 Swamee-Jain 근사식 적용.
 
-### 3.2 [FOR-HW-001] 마찰 손실 (Hazen-Williams)
+### 3.2 [S-FOR-003] [FOR-HW-001] 마찰 손실 (Hazen-Williams)
 소방 설비 및 상수도망 해석 시 관례적으로 사용하며, 물(Water) 전용 공식이다.
 $$h_f = 10.67 \cdot L \cdot Q^{1.85} \cdot C^{-1.85} \cdot D^{-4.87}$$
 *   **입력 단위 규범:** $L(m)$, $Q(m^3/s)$, $D(m)$.
@@ -82,6 +85,22 @@ $$H_{req, total} = \max(H_{req, path, 1}, H_{req, path, 2}, \dots, H_{req, path,
 *   **유속 검토:** $V_{min} \le V \le V_{max}$ (범위 이탈 시 과속/저속 경고)
 *   **압력 검토:** $P_{actual} \ge P_{required}$ (말단 요구압 만족 여부)
 *   **펌프 검토:** $H_{manual} \ge H_{pump}$ (수동 지정 펌프의 양정 부족 여부)
+
+## 6. NPSHa 및 캐비테이션 판정 규칙
+
+### 6.1 [FOR-NPSH-001] 유효흡입수두 (NPSHa) 계산
+펌프 흡입측에서 유체가 기화되지 않고 유지될 수 있는 여유 수두를 다음과 같이 계산한다.
+$$NPSHa = H_{atm} - H_{v} + H_{s} - h_{fs}$$
+*   $H_{atm}$: 절대 대기압 수두 (기본 10.33 m).
+*   $H_{v}$: 온도에 따른 유체 포화증기압 수두 (m).
+*   $H_{s}$: 펌프 중심선 대비 흡입 수조의 수위 (m, 흡입 상향일 경우 양수, 하향일 경우 음수).
+*   $h_{fs}$: 흡입 배관 경로에서 발생하는 총 마찰 및 국부 손실 수두 (m).
+
+### 6.2 [FOR-NPSH-002] 캐비테이션 발생 조건 (NPSHa 판정)
+*   **판정식:** $NPSHa < NPSHr \times SF_{npsh}$
+*   $NPSHr$: 펌프 제조사가 요구하는 필요유효흡입수두 (기본값: 수동 입력).
+*   $SF_{npsh}$: 안전 여유율 (Safety Margin, 기본 1.1).
+*   해당 조건 발생 시 시스템은 캐비테이션 위험 경고(`WRN003`)를 발생시켜야 한다.
 
 ---
 [목차로 돌아가기](./INDEX.md)

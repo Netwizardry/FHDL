@@ -1,5 +1,8 @@
 # 08. 구현 로드맵 및 MVP 범위 (Roadmap & MVP)
 
+**Status:** Active | **Version:** v4.0 | **Last Revised:** 2026-04-02 | **Supersedes:** v1.5
+
+
 본 문서는 FHDL 시스템의 단계별 개발 계획을 수립하고, 초기 버전(MVP)에서 집중해야 할 핵심 기능의 경계를 정의하여 프로젝트의 성공적인 착수를 돕습니다.
 
 ## 1. 구현 기본 원칙

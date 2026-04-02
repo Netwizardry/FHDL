@@ -1,5 +1,8 @@
 # 14. 리포트 및 출력 (Reporting & Output) 명세
 
+**Status:** Active | **Version:** v4.0 | **Last Revised:** 2026-04-02 | **Supersedes:** v1.5
+
+
 FHDL 시스템은 시뮬레이션 결과를 구조화된 파일 형식으로 출력하여 외부 도구와의 연동 및 설계 검증을 지원합니다.
 
 ## 1. 출력 구조 및 메타데이터 규범
@@ -34,6 +37,15 @@ FHDL 시스템은 시뮬레이션 결과를 구조화된 파일 형식으로 출
 | `HeadLoss` | `NetworkEdge.h_loss_total` | [FOR-DW-001] 또는 [FOR-HW-001] |
 | `SurgeIdx` | `NetworkEdge.surge_index` | [S-SOL-005] 간이 수격 위험도 |
 | `Formula` | `Provenance.formula_id` | 실제 계산에 적용된 공식 ID |
+
+### 2.3 [S-REP-004] 출력 데이터 출처 및 재계산 정책 (Provenance Map)
+| 컬럼명 / 필드명 | Source Layer | Canonical Field | Storage Policy | Recompute Allowed |
+| :--- | :--- | :--- | :--- | :--- |
+| `Node.x, y, z` | Semantic (Entity) | `Node.x`, `Node.y`, `Node.z` | 직렬화 저장 (`.fhd`, `SQLite`) | N (입력값 고정) |
+| `Node.sizing_mode` | Semantic (Entity) | `Node.sizing_mode` | 직렬화 저장 (`.fhd`, `SQLite`) | N (입력값 고정) |
+| `NetworkEdge.h_loss_total` | Calculation | `NetworkEdge.h_loss_total` | 인메모리 임시 보관 | Y (재계산 가능) |
+| `NetworkEdge.surge_index` | Calculation | `NetworkEdge.surge_index` | 인메모리 임시 보관 | Y (재계산 가능) |
+| `Simulation_Summary.provenance_map` | Reporting | `ProvenanceItem` 목록 | 파일 저장 (`.json`) | Y (재계산 시 갱신) |
 
 ## 3. 요약 리포트 명세 (Simulation_Summary.json)
 

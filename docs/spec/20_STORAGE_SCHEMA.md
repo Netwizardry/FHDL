@@ -1,5 +1,8 @@
 # 20. 저장소 스키마 및 직렬화 명세 (C01)
 
+**Status:** Active | **Version:** v4.0 | **Last Revised:** 2026-04-02 | **Supersedes:** v1.5
+
+
 FHDL 시스템의 영속성 계층(`Storage Layer`)에서 사용하는 데이터베이스 스키마와 데이터 매핑 규칙을 정의합니다.
 
 ## 1. SQLite 데이터베이스 스키마 (`state.db`)
@@ -14,7 +17,7 @@ CREATE TABLE nodes_result (
     x REAL, y REAL, z REAL NOT NULL, -- 공간 좌표 반영
     head_total REAL,                 -- 총수두 (m)
     p_gauge REAL,                    -- 게이지 압력 (Pa)
-    flow_req REAL,                   -- 요구 유량 (m3/h)
+    flow_req REAL,                   -- 요구 유량 (m3/s)
     sizing_mode TEXT,                -- 'MANUAL', 'AUTO', 'DERIVED'
     provenance_formula TEXT,         -- 적용 계산식 ID
     diagnostic_code TEXT             -- 발생 오류/경고 코드

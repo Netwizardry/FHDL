@@ -1,5 +1,8 @@
 # 09. 언어 및 문법 (Language & Syntax) 명세
 
+**Status:** Active | **Version:** v4.0 | **Last Revised:** 2026-04-02 | **Supersedes:** v1.5
+
+
 FHDL은 유체 설비의 구성과 연결 관계를 기술하기 위한 **선언형(Declarative)** 및 **구조형(Structured)** 도메인 특화 언어입니다.
 
 ## 1. 문법 설계 원칙

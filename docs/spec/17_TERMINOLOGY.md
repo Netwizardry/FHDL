@@ -1,5 +1,8 @@
 # 18. 용어 정의 및 명명 규칙 (Terminology & Naming)
 
+**Status:** Active | **Version:** v4.0 | **Last Revised:** 2026-04-02 | **Supersedes:** v1.5
+
+
 FHDL 시스템은 문서, 코드, 테스트, UI 전반에서 일관된 용어와 명명 규칙을 사용하여 소통의 효율성을 높이고 해석의 오류를 최소화합니다.
 
 ## 1. 핵심 용어 정의
