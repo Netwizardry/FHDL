@@ -1,4 +1,4 @@
-# 13. 오류 처리 및 진단 메시지 명세
+# 16. 오류 처리 및 진단 메시지 명세
 
 FHDL 프로그램은 입력, 검증, 구조 해석, 수리 계산 및 결과 생성의 모든 단계에서 발생하는 문제와 경고를 구조화된 진단 정보로 생성하여 사용자에게 제시해야 합니다.
 
@@ -41,27 +41,45 @@ FHDL 프로그램은 입력, 검증, 구조 해석, 수리 계산 및 결과 생
 | `related_id` | `str` | 문제가 발생한 구성요소 ID (예: pipe p1) |
 | `suggested_action` | `str` | 해결을 위해 설계자가 취해야 할 조치 가이드 |
 
-## 5. 단계별 주요 오류 예시
+## 5. 상세 진단 코드 명세 (Diagnostic Catalog)
 
-### 5.1 Semantic Errors (SEM)
-*   `SEM001`: 중복 ID 선언.
-*   `SEM002`: 정의되지 않은 식별자 참조.
-*   `SEM003`: 구성요소의 필수 속성(예: pipe의 length) 누락.
+### 5.1 Syntax Errors (SYN)
+*   **SYN001 (Unexpected Token):** 문법에 맞지 않는 토큰 발견.
+    *   *Action:* 해당 라인의 오타나 누락된 `;` 또는 `{`를 확인하세요.
+*   **SYN002 (Invalid Unit):** 지원하지 않는 단위 사용.
+    *   *Action:* `08. LANGUAGE.md`에 명시된 표준 단위(m, LPM, MPa 등)를 사용하세요.
 
-### 5.2 Network Errors (NET)
-*   `NET001`: 구성요소가 어떤 공급원과도 연결되지 않음 (연결 단절).
-*   `NET002`: 공급원(Tank/Source)이 없는 경로 존재.
-*   `NET003`: 말단 장치(Terminal)까지 도달 불가능한 경로.
+### 5.2 Semantic Errors (SEM)
+*   **SEM001 (Duplicate ID):** 동일한 식별자가 중복 선언됨.
+    *   *Action:* 구성요소의 ID를 고유하게 수정하세요.
+*   **SEM002 (Undefined Reference):** 존재하지 않는 ID를 참조함.
+    *   *Action:* `connect` 문에 사용된 ID가 위에서 정의되었는지 확인하세요.
+*   **SEM003 (Missing Property):** 필수 속성(예: pipe의 length)이 누락됨.
+    *   *Action:* 해당 구성요소의 필수 속성을 입력하세요.
 
-### 5.3 Calculation Errors (CAL)
-*   `CAL001`: 유속/손실 계산에 필요한 입력값(관경 등) 부족.
-*   `CAL002`: 허용 유속을 만족하는 표준 관경을 찾을 수 없음.
-*   `CAL003`: 펌프 사양 산정 중 수리적 발산 발생.
+### 5.3 Network Errors (NET)
+*   **NET001 (Isolated Node):** 어떤 연결도 없는 고립 노드 발견.
+    *   *Action:* `connect` 문을 사용하여 네트워크에 포함시키거나 삭제하세요.
+*   **NET002 (No Source Path):** 공급원(Tank/Source)에서 시작되지 않는 경로 존재.
+    *   *Action:* 모든 배관은 반드시 수로나 펌프를 통해 공급원과 연결되어야 합니다.
+*   **NET003 (Unreachable Terminal):** 말단 장치까지 도달할 수 없는 경로.
+    *   *Action:* 연결 방향(`->`)이 올바른지 확인하세요.
 
-### 5.4 Design Warnings (WRN)
-*   `WRN001`: 배관 내 유속이 허용 최대값(2.5m/s)을 초과함.
-*   `WRN002`: 펌프 요구 양정이 수동 지정 펌프의 양정을 초과함.
-*   `WRN003`: 이전 계산 결과가 현재 수정된 문서와 일치하지 않음.
+### 5.4 Calculation Errors (CAL)
+*   **CAL001 (Insufficient Data):** 계산에 필요한 수치가 부족함.
+    *   *Action:* 유량이나 관경 등 최소 하나의 결정 변수가 필요합니다.
+*   **CAL002 (No Sizing Solution):** 허용 유속을 만족하는 표준 관경을 찾을 수 없음.
+    *   *Action:* 요구 유량을 줄이거나 유속 제한(`velocity_max`)을 완화하세요.
+*   **CAL003 (Solver Divergence):** 수리 해석이 수렴하지 않고 발산함.
+    *   *Action:* 네트워크에 루프가 있는지, 혹은 유량이 너무 극단적인지 확인하세요.
+
+### 5.5 Design Warnings (WRN)
+*   **WRN001 (Velocity Out of Range):** 유속이 권장 범위를 벗어남.
+    *   *Action:* 관경을 조정하여 적정 유속(1.0~2.5m/s)을 유지하세요.
+*   **WRN002 (Pressure Low):** 말단 요구압력보다 실제 압력이 낮음.
+    *   *Action:* 펌프 양정을 높이거나 배관 손실을 줄이세요.
+*   **WRN003 (Cavitation Risk):** 해당 지점의 압력이 증기압에 근접하여 캐비테이션 위험 발생.
+    *   *Action:* 펌프 흡입측 손실을 줄이거나 펌프 고도를 낮추세요.
 
 ---
 [목차로 돌아가기](./INDEX.md)

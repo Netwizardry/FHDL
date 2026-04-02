@@ -1,47 +1,44 @@
 # 01. 핵심 구성요소 (Core Components)
 
-FHDL 시스템은 유기적으로 연결된 8개의 핵심 모듈로 구성됩니다.
+FHDL 시스템은 유기적으로 연결된 8개의 핵심 계층(Layers)으로 구성됩니다.
 
-## 1. 언어 및 모델링 (Input & Analysis)
+## 1. 사용자 및 제어 계층 (User & Control)
 
-### 1.1 언어 계층 (FHDL DSL)
-사용자가 설계 의도를 기술하는 최상위 레이어입니다.
-*   **역할:** 설비 구성, 연결 관계, 수량, 고저차 및 제약 조건을 선언문으로 표현.
-*   **특징:** 자동 계산 대상(`auto`)과 수동 고정값 구분, 반복 및 연결 선언 지원.
+### 1.1 UI Layer (사용자 인터페이스)
+*   **역할:** DSL 텍스트 편집, 실시간 구문 강조, 해석 결과 시각화.
+*   **구성:** `MainEditor`, `NetworkViewer`, `DiagnosticPanel`.
 
-### 1.2 파서 및 문법 검증기 (Parser & Linter)
-FHDL 문장을 읽어 논리적 결함을 초기 검증하는 구성요소입니다.
-*   **역할:** 토큰화, AST 생성, 단위 및 타입 검증.
-*   **검증:** 중복 선언, 연결 누락, 정의되지 않은 노드 참조 검출.
+### 1.2 Application Layer (응용 제어)
+*   **역할:** 전체 워크플로우 오케스트레이션 및 파이프라인 관리.
+*   **구성:** `ProjectManager`, `PipelineManager`.
 
-### 1.3 설비 네트워크 변환기 (Network Transformer)
-설계 선언을 실제 계산 가능한 모델(노드-엣지 그래프)로 정규화합니다.
-*   **역할:** 설비 요소를 노드로, 배관을 엣지로 변환하여 연결 관계 정리.
-*   **분석:** 분기/합류 구조 식별 및 유동 경로 후보 생성.
+## 2. 해석 및 처리 계층 (Processing & Analysis)
 
-## 2. 수리 해석 및 계산 (Hydraulic Logic)
+### 2.1 Parser Layer (문법 처리)
+*   **역할:** DSL 텍스트를 토큰화하고 추상 구문 트리(AST)로 변환.
+*   **구성:** `Lexer`, `FHDLParser`.
 
-### 2.1 유량 집계 및 분배 엔진 (Flow Engine)
-말단 요구조건을 상류로 집계하여 구간별 설계 유량을 결정합니다.
-*   **역할:** 말단 요구 유량 확정, 동시 사용 조건 반영.
+### 2.2 Semantic Layer (의미 해석)
+*   **역할:** AST의 정규화, 단위 변환 및 의미론적 검증.
+*   **구성:** `SemanticAnalyzer`, `UnitConverter`.
 
-### 2.2 수리계산 엔진 (Hydraulic Engine)
-유속, 마찰손실, 수두차 등을 산정하는 핵심 계산부입니다.
-*   **역할:** 마찰/국부 손실 계산, 정수두 반영, 노즐 성능 환산.
+### 2.3 Network Builder Layer (네트워크 구성)
+*   **역할:** 설비 엔티티를 수리 계산용 그래프 모델로 변환.
+*   **구성:** `GraphBuilder`, `TopologyChecker`.
 
-### 2.3 자동 선정 엔진 (Sizing Engine)
-해석 결과를 설계 권장값으로 변환합니다.
-*   **역할:** 구간별 권장 관경, 펌프 유량/양정, 탱크 최소 용량 선정 및 여유율 반영.
+## 3. 엔진 및 데이터 계층 (Engine & Data)
 
-## 3. 출력 및 라이브러리 (Output & Support)
+### 3.1 Calculation Engine Layer (계산 엔진)
+*   **역할:** 2-Pass 알고리즘을 통한 수리 해석 및 자동 산정.
+*   **구성:** `HydraulicSolver`, `AutoSizer`.
 
-### 3.1 결과 리포트 생성기 (Report Generator)
-계산 결과를 사람이 읽기 쉬운 설계서 형태로 정리합니다.
-*   **역할:** 구간별 계산표 출력, 최종 사양 정리, 자동 보정값 및 경고사항 명시.
+### 3.2 Report & Diagnostic Layer (결과 및 진단)
+*   **역할:** 계산 결과서 생성 및 통합 진단 정보 관리.
+*   **구성:** `ReportGenerator`, `DiagnosticManager`.
 
-### 3.2 기본값/규칙 라이브러리 (Default Library)
-미지정 항목을 보완하고 설계 표준을 제공합니다.
-*   **역할:** 허용 유속 기본값, 안전율, 표준 관경 테이블(`SizeMap`) 제공.
+### 3.3 Storage Layer (저장 관리)
+*   **역할:** 파일(.fhd), 메타데이터, 캐시 DB의 영속성 관리.
+*   **구성:** `StorageProvider`, `CacheDBManager`.
 
 ---
 [목차로 돌아가기](./INDEX.md)

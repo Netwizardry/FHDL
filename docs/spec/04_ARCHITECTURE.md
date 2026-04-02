@@ -1,4 +1,4 @@
-# 04. 시스템 아키텍처 및 모듈 분리 명세
+# 05. 시스템 아키텍처 및 모듈 분리 명세
 
 FHDL 시스템은 입력 문법 처리, 설비 구조 해석, 수리 계산, 결과 출력, 저장 기능이 서로 독립적으로 유지되면서도 유기적인 설계 워크플로우를 형성하도록 계층화된 아키텍처를 가집니다.
 
@@ -43,13 +43,28 @@ FHDL 시스템은 입력 문법 처리, 설비 구조 해석, 수리 계산, 결
 *   **책임:** 설계 문서(.fhd), 프로젝트 메타데이터, 계산 결과의 영속성 관리.
 *   **원칙:** 파일 포맷의 직렬화/역직렬화만을 담당합니다.
 
-## 3. 실행 파이프라인 (Execution Pipeline)
+## 4. 동시성 및 데이터 무결성 전략 (A12)
 
-### 3.1 문법 검사 파이프라인
-`SourceDocument` -> `Parser` -> `Semantic Analyzer` -> `UI (Diagnostics Only)`
+GUI 쓰레드와 계산(Solver) 쓰레드 간의 데이터 충돌을 방지하기 위해 다음 전략을 적용합니다.
 
-### 3.2 전체 해석 파이프라인
-`SourceDocument` -> `Parser` -> `Semantic` -> `Network Builder` -> `Calc Engine` -> `Report Generator` -> `UI/Storage`
+### 4.1 스냅샷 기반 계산 (Snapshot-based Calculation)
+솔버는 실행 시점의 `FluidSystem` 객체에 대해 **깊은 복사(Deep Copy)**를 수행한 `Snapshot`을 생성하여 계산을 수행합니다.
+*   **격리 (Isolation):** 계산 중 사용자가 에디터에서 소스를 수정하더라도, 진행 중인 해석 세션의 데이터는 오염되지 않습니다.
+*   **불변성 (Immutability):** 해석이 완료된 후 결과(Result)를 원본 객체에 병합(Merge)하거나 별도의 결과 객체로 반환합니다.
 
----
-[목차로 돌아가기](./INDEX.md)
+### 4.2 비동기 통신 규약 (Async Messaging Contract)
+GUI 쓰레드와 계산 쓰레드는 직접적인 객체 참조 대신 다음의 메시징 규약에 따라 통신합니다.
+
+*   **Request (GUI -> Solver):** `start_analysis(snapshot: FluidSystem)` 호출.
+*   **Signals (Solver -> GUI):**
+    *   `started`: 해석 시작 알림 (UI Progress Bar 활성화).
+    *   `progress(int)`: 0~100 사이의 진행률 전달 (반복 계산 횟수 기준).
+    *   `finished(AnalysisResult)`: 해석 완료 시 결과 객체 및 진단 정보 전달.
+    *   `error(DiagnosticItem)`: 치명적 오류 발생 시 즉시 중단 및 오류 내용 전달.
+*   **Abort (GUI -> Solver):** `cancel_analysis()` 시그널을 통해 진행 중인 계산 루프 강제 종료.
+
+### 4.3 실행 상태 락 (Execution Lock)
+...
+## 5. 저장 및 영속성 전략 (A14)
+
+...

@@ -1,4 +1,4 @@
-# 02. 계산 요구사항 (Calculation Requirements)
+# 03. 계산 요구사항 (Calculation Requirements)
 
 FHDL 시스템은 선언된 설비 구조와 설계 조건을 바탕으로 유체 역학적 타당성을 검토하고 핵심 사양을 자동 산정하기 위해 다음과 같은 계산 로직을 수행해야 합니다.
 

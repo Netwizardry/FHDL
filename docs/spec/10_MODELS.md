@@ -1,4 +1,4 @@
-# 07. 데이터 모델 및 내부 구조 명세
+# 11. 데이터 모델 및 내부 구조 명세
 
 FHDL 프로그램은 입력 문법 처리, 의미 검증, 계산 수행, 결과 출력이 서로 독립적으로 유지될 수 있도록 계층적으로 분리된 데이터 모델을 사용합니다.
 
@@ -22,12 +22,25 @@ FHDL 프로그램은 입력 문법 처리, 의미 검증, 계산 수행, 결과 
 *   **ConnectNode:** `->` 연산자로 연결된 경로 세그먼트.
 
 ### 2.2 Semantic Model (Entities)
-AST를 실제 설계 객체로 변환하고 단위 정규화 및 참조 해결이 완료된 상태입니다.
-*   **EntityBase:** ID, 원문 위치(Source Span), 산정 모드(`auto/manual`)를 포함한 공통 베이스.
-*   **TankEntity:** 용량, 수위, 고도 정보.
-*   **PumpEntity:** 유량/양정 모드, 효율, 동력 정보.
-*   **PipeEntity:** 길이, 재질, 거칠기, 손실계수.
-*   **TerminalEntity:** 노즐/스프링클러 통합 모델 (유량, 압력, 분사높이 요구조건).
+AST를 실제 설계 객체로 변환하고 단위 정규화 및 참조 해결이 완료된 상태입니다. 모든 수치는 내부적으로 SI 표준 단위를 사용합니다.
+
+#### [Entity 속성 제약 조건표 (A06)]
+
+| Entity | 필드명 | 필수 | 타입 | 허용 범위 (SI) | 기본값 |
+| :--- | :--- | :---: | :--- | :--- | :--- |
+| **Tank** | `volume` | N | float | $> 0$ | 무제한 |
+| | `elevation` | Y | float | -100 ~ 10000 | 0.0 |
+| **Pump** | `flow` | N | float/auto | $\ge 0$ | `auto` |
+| | `head` | N | float/auto | $\ge 0$ | `auto` |
+| | `efficiency` | N | float | 0.0 ~ 1.0 | 0.75 |
+| **Pipe** | `length` | Y | float | $> 0$ | - |
+| | `diameter` | N | float/auto | $> 0$ | `auto` |
+| | `roughness` | N | float | $> 0$ | 0.045 (Steel) |
+| **Terminal** | `required_q` | N | float | $\ge 0$ | 0.0 |
+| | `required_p` | N | float | $\ge 0$ | 0.0 |
+
+*   **Nullable 정책:** '필수'가 N인 항목은 입력 누락 시 기본값이 적용되거나 `auto` 산정 로직으로 전이됩니다.
+*   **ID 규칙:** 모든 엔티티는 시스템 내에서 유일한 문자열 ID를 가져야 합니다 (정규식: `^[a-zA-Z_][a-zA-Z0-9_]*$`).
 
 ### 2.3 Network Model (Calculation Graph)
 물리적 계산을 수행하기 위한 노드-엣지 정규화 모델입니다.

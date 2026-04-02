@@ -1,4 +1,4 @@
-# 02. 언어 및 문법 (Language & Syntax) 명세
+# 09. 언어 및 문법 (Language & Syntax) 명세
 
 FHDL은 유체 설비의 구성과 연결 관계를 기술하기 위한 **선언형(Declarative)** 및 **구조형(Structured)** 도메인 특화 언어입니다.
 
@@ -13,13 +13,17 @@ FHDL은 유체 설비의 구성과 연결 관계를 기술하기 위한 **선언
 
 ### 2.1 `system` (최상위 블록)
 설계 프로젝트의 메타데이터와 전역 설정을 정의합니다.
-*   **속성:** `unit_length`, `unit_flow`, `unit_pressure`, `fluid` (기본값: water).
+*   **속성:** 
+    *   `unit_system`: `METRIC` | `IMPERIAL`
+    *   `fluid`: `water` | `brine` (기본값: water)
+    *   `temp`: 유체 온도 (기본값: 20.0)
+    *   `friction_model`: `DW` (Darcy-Weisbach) | `HW` (Hazen-Williams) - **필수 선택**
 *   **예시:**
     ```fhd
     system demo_project {
-        unit_length = m;
-        unit_flow = LPM;
+        unit_system = METRIC;
         fluid = water;
+        friction_model = DW;
     }
     ```
 
@@ -33,7 +37,15 @@ FHDL은 유체 설비의 구성과 연결 관계를 기술하기 위한 **선언
 *   **특징:** `flow`와 `head`를 `auto`로 설정하여 시스템 요구치에 맞는 사양을 자동 산정할 수 있습니다.
 
 ### 2.4 `pipe` (배관)
-*   **속성:** `length` (필수), `diameter`, `material`, `roughness`, `loss_k`.
+*   **속성:** 
+    *   `length` (필수): 배관 길이.
+    *   `diameter`: `auto` | 고정값.
+    *   `material`: 재질 식별자.
+    *   `loss_k`: 국부 손실 계수.
+    *   **[물리 모델별 전용 속성]**
+        *   `roughness` (DW 전용): 절대 거칠기 ($\epsilon$, mm 단위).
+        *   `c_factor` (HW 전용): 마찰 계수 ($C$, 무차원).
+*   **제약:** `friction_model`이 `DW`일 때 `c_factor` 사용 시 `SEM004` 에러 발생. (자의적 변환 금지)
 *   **특징:** `diameter = auto;` 설정 시 허용 유속 범위 내에서 관경을 자동 선정합니다.
 
 ### 2.5 `nozzle` / `sprinkler` (말단 장치)
@@ -80,6 +92,29 @@ FHDL은 유체 설비의 구성과 연결 관계를 기술하기 위한 **선언
 실무에서의 대량 반복 선언을 위해 범위 문법을 지원합니다.
 *   **ID 범위:** `nozzle n1 to n10 { ... }`
 *   **수량 기반:** `sprinkler head_group { count = 12; ... }`
+
+## 6. 템플릿 및 재사용 (Reusability - M01)
+
+대규모 프로젝트의 반복되는 설비 구조를 효율적으로 정의하기 위해 템플릿 기능을 제공합니다.
+
+### 6.1 `template` 정의
+```fhd
+template sprinkler_branch(id_prefix, elevation) {
+    pipe {id_prefix}_p1 { length = 10m; diameter = auto; }
+    sprinkler {id_prefix}_s1 { elevation = {elevation}; flow = 80LPM; }
+    connect {id_prefix}_p1 -> {id_prefix}_s1;
+}
+```
+
+### 6.2 `instance` 사용
+```fhd
+instance b1: sprinkler_branch("b1", 2.5m);
+instance b2: sprinkler_branch("b2", 5.0m);
+```
+
+### 6.3 템플릿 매핑 규칙
+*   **ID 치환:** `{id_prefix}` 변수는 인스턴스 생성 시 전달된 문자열로 치환되어 고유 ID를 형성합니다.
+*   **속성 주입:** 템플릿 내의 속성값은 인스턴스 인자를 통해 동적으로 결정됩니다.
 
 ---
 [목차로 돌아가기](./INDEX.md)

@@ -10,7 +10,7 @@ A text-based Fluid Hardware Description Language (FHDL) system that automates 3D
 - **component_library:** Built-in/User-defined materials and fittings.
 
 ## Hard Rules
-- **Fluid Model:** Incompressible (Water-based) using Hazen-Williams friction loss.
+- **Fluid Model:** Incompressible (Water-based) using Darcy-Weisbach friction loss and Colebrook-White correlation.
 - **Topology:** Must be a connected directed graph starting from a Source/Tank.
 - **Z-Up:** Coordinate system is strictly Z-up for hydraulic head calculation.
 - **Auto-Fitting:** Joint angles must be calculated automatically from node vectors.

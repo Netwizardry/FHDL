@@ -10,43 +10,31 @@
 
 ### 2.1 System Setup
 ```fhd
-System_Setup {
-    Units = METRIC;      // METRIC or IMPERIAL
-    Fluid_Type = Water;  // Fluid category
-    Temp = 20.0;         // Degree Celsius
-    Altitude = 0.0;      // Elevation in meters
-    Step = 0.1;          // Simulation step (seconds)
+system demo_project {
+    unit_length = m;
+    unit_flow = LPM;
+    fluid = water;
 }
 ```
 
-### 2.2 Component Library
+### 2.2 Component & Material Definition
 ```fhd
-Component_Library {
-    // Material Name(Roughness epsilon in mm, [SizeMap], MaxP, WaveV)
-    Material Steel(0.045, [50A:52.9, 100A:102.3]);
-    
-    // Preset Name(Type, K-Factor)
-    Preset Sprinkler(Terminal, 80.0);
-    
-    // PumpCurve Name([(Q1, H1), (Q2, H2), ...])
-    PumpCurve MyPump([(0, 50), (100, 40), (200, 20)]);
+pipe main_1 {
+    length = 50m;
+    diameter = auto;
+    material = Steel;
+}
+
+nozzle n1 to n5 {
+    jet_height = 2.5m;
+    flow = 40LPM;
 }
 ```
 
 ### 2.3 Topology Definition
 ```fhd
-Topology {
-    node N1(0, 0, 10, TANK);
-    node N2(10, 0, 0, PUMP, MyPump);
-    node N3(50, 0, 0, JUNCTION);
-    node N4(100, 0, 0, TERMINAL, Sprinkler);
-    
-    pipe P1(N1, N2, 100A, Steel);
-    pipe P2(N2, N3, 50A, Steel);
-    pipe P3(N3, N4, 50A, Steel);
-    
-    valve V1(P2, GATE, OPEN); // Targeting pipe ID
-}
+connect tank_1 -> pump_1 -> main_1 -> j1;
+connect j1 -> n1..n5;
 ```
 
 ## 3. GUI Guide
