@@ -8,8 +8,15 @@ FHDL 프로그램은 설계자의 입력을 물리적 모델로 변환하고 계
 *   **길이 가드:** $length > 0$ (m). 0 이하일 경우 `SEM007` 발생.
 *   **결과:** 모든 가드를 통과한 데이터만 `Validated` 상태로 전이되어 솔버에 전달됩니다. (GIGO 방지)
 
-## 2. 상태 정의 (State Definitions)
+### 1.3 토폴로지 검증 (Topology Guard)
+네트워크 모델 생성 직후, 수리 해석의 수렴성을 보장하기 위해 위상 구조를 검증합니다.
+*   **Cycle Detection:** 시스템은 NetworkX의 `simple_cycles` 알고리즘을 사용하여 폐회로를 탐지합니다.
+*   **Loop Policy:** 
+    *   **Open Tree:** 루프가 없는 트리 구조는 즉시 Pass.
+    *   **Parallel Pipes:** 동일 노드 사이의 병렬 배관은 허용하되, 복합 루프망은 v0.1에서 `NET004` 경고를 발생시킵니다.
+    *   **Dead Loop:** 공급원(Source) 없이 순환만 하는 고립 루프는 `NET005` 에러로 처리하여 실행을 중단합니다.
 
+## 2. 상태 정의 (State Definitions)
 ...
 ### 2.1 문서 상태 (Document States)
 *   **Idle:** 활성 문서가 없는 초기 상태.
