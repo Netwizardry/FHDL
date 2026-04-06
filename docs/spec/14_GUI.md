@@ -7,15 +7,42 @@ FHDL GUI는 텍스트 기반 설계를 지원하는 통합 개발 환경(IDE)으
 
 ## 1. 메인 레이아웃 및 5대 핵심 패널 (Standard Layout)
 
-FHDL GUI는 `03_UI_UX_REQ.md`에서 정의한 5대 패널 체제를 엄격히 준수하며, 각 패널은 독립적인 위젯 클래스로 구현된다.
+### 1.1 [S-GUI-009] 통합 레이아웃 배치도 (ASCII Wireframe)
+```
++-----------------------+------------------------------------------+
+| Project Selection (L) |           Toolbar (Top)                  |
++-----------------------+--------------------+---------------------+
+| [Recent Projects]     |                    |                     |
+| > project_1.fhproj    |  FHDL Editor (CL)  |  Topology Viewer    |
+| > sample_test.fhd     |                    |       (CR)          |
+|                       |  [Line 10...]      |  [Canvas / Graph]   |
+| [Actions]             |  pipe p1 {         |                     |
+| [New] [Open] [Save]   |     length = 10m;  |     (Node-Edge)     |
+|                       |  }                 |                     |
++-----------------------+--------------------+---------------------+
+|   Result Dashboard (BL)                    |  Error/Warning (BR) |
++-----------------------+--------------------+---------------------+
+| [Summary]             | [Detail Table]     | [Code] [Msg] [Loc]  |
+| Q: 150 m3/h           | p1: 1.5m/s  0.1bar | SYN001: Missing ;   |
+| H: 45 m               | p2: 2.1m/s  0.3bar | WRN001: Hi Vel(p1)  |
++-----------------------+--------------------+---------------------+
+```
 
-| ID | 패널 명칭 (Panel Name) | 주요 역할 및 기능 |
-| :--- | :--- | :--- |
-| **S-GUI-001** | **Project Selection** | 파일 I/O, 최근 프로젝트 목록, 샘플 로드 (Sidebar 상단) |
-| **S-GUI-002** | **FHDL Editor** | 구문 강조, 비동기 린팅, 에러 하이라이팅 (Center-Left) |
-| **S-GUI-003** | **Topology Viewer** | 네트워크 그래프 시각화, 최불리 경로 강조 (Center-Right) |
-| **S-GUI-004** | **Result Dashboard** | 수치 해석 결과 테이블, 선정 근거 툴팁 (Bottom-Left) |
-| **S-GUI-005** | **Error/Warning Center** | 진단 메시지 통합 표시, 소스 점프 기능 (Bottom-Right) |
+### 1.2 [S-GUI-010] 패널별 세부 위젯 구성
+1.  **Project Selection (Left Sidebar):**
+    *   `QListView`: 최근 프로젝트 목록 표시.
+    *   `QPushButton` 그룹: 신규/열기/저장/환경설정 실행.
+2.  **FHDL Editor (Center-Left):**
+    *   `QPlainTextEdit`: 커스텀 `QSyntaxHighlighter` 적용.
+    *   `EditorGutter`: 줄 번호 및 중단점/에러 아이콘 표시 영역.
+3.  **Topology Viewer (Center-Right):**
+    *   `QGraphicsView/Scene`: NetworkX 모델의 노드-엣지 시각화.
+    *   `Zoom/Pan`: 마우스 휠 및 드래그 제어 지원.
+4.  **Result Dashboard (Bottom-Left):**
+    *   `QTabWidget`: '요약(Summary)'과 '상세(Details)' 탭 분리.
+    *   `QTableView`: 계산 결과 데이터의 정렬 및 필터링 지원.
+5.  **Error Center (Bottom-Right):**
+    *   `QTreeWidget`: 심각도(Icon)별 분류 및 더블클릭 이벤트(Jump to Editor) 바인딩.
 
 ## 2. 반응성 및 성능 규범 (Performance & UX)
 
