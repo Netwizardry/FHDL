@@ -9,7 +9,7 @@ from typing import List, Optional
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QFileDialog, QHBoxLayout, QInputDialog, QLabel,
-    QListWidget, QListWidgetItem, QMessageBox,
+    QListWidget, QListWidgetItem, QMenu, QMessageBox,
     QPushButton, QVBoxLayout, QWidget,
 )
 
@@ -62,6 +62,8 @@ class ProjectPanel(QWidget):
             QListWidget::item:hover { background:#2A2D2E; }
         """)
         self._list.itemDoubleClicked.connect(self._on_item_double_clicked)
+        self._list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._list.customContextMenuRequested.connect(self._show_context_menu)
         layout.addWidget(self._list, stretch=1)
 
         # 버튼 그룹
@@ -97,6 +99,32 @@ class ProjectPanel(QWidget):
             self._open_path(path)
         else:
             QMessageBox.warning(self, "경고", f"프로젝트를 찾을 수 없습니다:\n{path}")
+
+    def _show_context_menu(self, pos):
+        item = self._list.itemAt(pos)
+        if not item:
+            return
+        menu = QMenu(self)
+        menu.setStyleSheet("""
+            QMenu { background:#252526; color:#CCC; border:1px solid #444; }
+            QMenu::item:selected { background:#094771; }
+            QMenu::item:disabled { color:#666; }
+        """)
+        open_act   = menu.addAction("열기")
+        menu.addSeparator()
+        remove_act = menu.addAction("목록에서 제거")
+        action = menu.exec(self._list.mapToGlobal(pos))
+        if action == open_act:
+            self._on_item_double_clicked(item)
+        elif action == remove_act:
+            self._remove_from_recent(item)
+
+    def _remove_from_recent(self, item: QListWidgetItem):
+        path = item.data(Qt.ItemDataRole.UserRole)
+        if path in self._recent:
+            self._recent.remove(path)
+            _save_recent(self._recent)
+            self._refresh_list()
 
     def _new_project(self):
         name, ok = QInputDialog.getText(self, "새 프로젝트", "프로젝트 이름:")

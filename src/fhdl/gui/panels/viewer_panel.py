@@ -22,10 +22,11 @@ from ...core.models import AnalysisResult, EntityMap, PipeCalcResult
 # ---------------------------------------------------------------------------
 
 _NODE_COLORS = {
-    "tank":     "#4EC9B0",  # 청록
-    "pump":     "#85C1E9",  # 하늘
-    "terminal": "#F0A500",  # 주황
-    "junction": "#9B9B9B",  # 회색
+    "tank":         "#4EC9B0",  # 청록
+    "pump":         "#85C1E9",  # 하늘
+    "submersible":  "#5B9BD5",  # 진청 (수중펌프 — 탱크와 겹칠 때 구분)
+    "terminal":     "#F0A500",  # 주황
+    "junction":     "#9B9B9B",  # 회색
 }
 
 _PIPE_COLORS = {
@@ -161,27 +162,48 @@ class TopologyViewer(QWidget):
                              Qt.AspectRatioMode.KeepAspectRatio)
 
     def _layout(self, em: EntityMap) -> Dict[str, Tuple[float, float]]:
-        """노드 위치 자동 배치 (간단한 계층형)."""
+        """노드 위치 자동 배치 (계층형 + 수중펌프 탱크 중첩 처리)."""
         pos: Dict[str, Tuple[float, float]] = {}
-        all_ids = em.all_node_ids()
-        n = max(len(all_ids), 1)
         r = 200.0
-
-        # 소스(탱크/펌프)를 중앙에, 나머지를 원형으로 배치
-        sources = list(em.tanks) + list(em.pumps)
-        others = [nid for nid in all_ids if nid not in sources]
-
         cx, cy = 0.0, 0.0
-        for i, nid in enumerate(sources):
-            pos[nid] = (cx + i * 120, cy)
 
+        # 1단계: 탱크 배치 (왼쪽에서 오른쪽)
+        tanks = list(em.tanks)
+        for i, nid in enumerate(tanks):
+            pos[nid] = (cx + i * 130, cy)
+
+        # 2단계: 일반 펌프 배치 (탱크 행 옆에 이어서)
+        normal_pumps = [
+            nid for nid, p in em.pumps.items()
+            if p.pump_type != "submersible"
+        ]
+        offset = len(tanks) * 130
+        for i, nid in enumerate(normal_pumps):
+            pos[nid] = (cx + offset + i * 130, cy)
+
+        # 3단계: 수중펌프 — 기준 탱크와 동일 좌표 (겹침 허용)
+        for nid, pump in em.pumps.items():
+            if pump.pump_type == "submersible":
+                ref = pump.submerge_ref
+                if ref and ref in pos:
+                    # 기준 탱크와 완전히 겹침 (사용자 요청)
+                    pos[nid] = pos[ref]
+                elif tanks:
+                    # 기준 탱크 미지정 시 첫 번째 탱크에 겹침
+                    pos[nid] = pos[tanks[0]]
+                else:
+                    pos[nid] = (cx, cy)
+
+        # 4단계: 나머지 노드(junction, terminal)를 원형 배치
+        sources = set(tanks) | set(em.pumps.keys())
+        others = [nid for nid in em.all_node_ids() if nid not in sources]
         for i, nid in enumerate(others):
             angle = 2 * math.pi * i / max(len(others), 1)
             pos[nid] = (cx + r * math.cos(angle), cy + r * math.sin(angle))
 
-        # 실제 좌표가 있으면 사용
-        for entity in list(em.tanks.values()) + list(em.pumps.values()) + \
-                      list(em.junctions.values()) + list(em.terminals.values()):
+        # 5단계: DSL에 x/y 좌표가 직접 지정된 경우 덮어씀
+        for entity in (list(em.tanks.values()) + list(em.pumps.values()) +
+                       list(em.junctions.values()) + list(em.terminals.values())):
             if hasattr(entity, 'x') and (entity.x != 0 or entity.y != 0):
                 pos[entity.entity_id] = (entity.x * 5, -entity.y * 5)
 
@@ -194,10 +216,14 @@ class TopologyViewer(QWidget):
 
 
 def _resolve_type(nid: str, em: EntityMap) -> str:
-    if nid in em.tanks: return "tank"
-    if nid in em.pumps: return "pump"
-    if nid in em.junctions: return "junction"
-    if nid in em.terminals: return "terminal"
+    if nid in em.tanks:
+        return "tank"
+    if nid in em.pumps:
+        return "submersible" if em.pumps[nid].pump_type == "submersible" else "pump"
+    if nid in em.junctions:
+        return "junction"
+    if nid in em.terminals:
+        return "terminal"
     return "junction"
 
 

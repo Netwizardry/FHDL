@@ -140,6 +140,7 @@ class SemanticAnalyzer:
             self._check_elevation(elev, span)
             flow_raw = a.get("flow", "auto")
             head_raw = a.get("head", "auto")
+            pump_type = str(a.get("pump_type", "normal")).lower()
             em.pumps[cid] = PumpEntity(
                 entity_id=cid,
                 elevation=elev,
@@ -148,6 +149,9 @@ class SemanticAnalyzer:
                 efficiency=self._as_float(a.get("efficiency", 0.75), ""),
                 npshr=self._as_si(a.get("npshr", (0.5, "m"))),
                 curve_id=str(a.get("curve_id", "")),
+                pump_type=pump_type,
+                min_level=self._as_si(a.get("min_level", (0.0, "m"))),
+                submerge_ref=str(a.get("submerge_ref", "")),
                 x=self._as_float(a.get("x", 0.0), ""),
                 y=self._as_float(a.get("y", 0.0), ""),
                 span=span,

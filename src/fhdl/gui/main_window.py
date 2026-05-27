@@ -189,6 +189,7 @@ class MainWindow(QMainWindow):
         self._project_panel.project_opened.connect(self._on_project_opened)
         self._project_panel.project_saved.connect(self._save)
         self._editor_panel.text_changed.connect(self._on_text_changed)
+        self._editor_panel.run_requested.connect(lambda _: self._run_analysis())
         self._diag_panel.diagnostic_selected.connect(self._on_diagnostic_selected)
 
     # ------------------------------------------------------------------
