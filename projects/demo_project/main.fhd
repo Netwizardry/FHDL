@@ -1,0 +1,78 @@
+// FHDL 데모 프로젝트
+// 단순 펌프 → 배관 → 터미널 구조
+
+system main {
+    unit_system = METRIC;
+    fluid = water;
+    temp = 20;
+    altitude = 0m;
+    friction_model = DW;
+}
+
+constraint {
+    velocity_min = 0.3m;
+    velocity_max = 2.5m;
+    safety_factor_head = 1.1;
+}
+
+// 공급 탱크 (고도 10m)
+tank reservoir {
+    elevation = 10m;
+    volume = 50m3;
+    level_max = 1.5m;
+}
+
+// 분기점
+junction j1 {
+    elevation = 5m;
+    x = 50;
+    y = 0;
+}
+
+// 터미널 장치 A (스프링클러)
+terminal sprinkler_A {
+    elevation = 3m;
+    required_q = 80lpm;
+    required_p = 0.1MPa;
+    x = 100;
+    y = 30;
+}
+
+// 터미널 장치 B (노즐)
+terminal nozzle_B {
+    elevation = 2m;
+    required_q = 60lpm;
+    required_p = 0.08MPa;
+    x = 100;
+    y = -30;
+}
+
+// 배관 정의
+pipe main_pipe {
+    start = reservoir;
+    end = j1;
+    length = 60m;
+    diameter = auto;
+    material = Steel;
+}
+
+pipe branch_A {
+    start = j1;
+    end = sprinkler_A;
+    length = 35m;
+    diameter = auto;
+    material = Steel;
+}
+
+pipe branch_B {
+    start = j1;
+    end = nozzle_B;
+    length = 40m;
+    diameter = auto;
+    material = Steel;
+}
+
+// 연결 정의
+connect reservoir -> j1;
+connect j1 -> sprinkler_A;
+connect j1 -> nozzle_B;

@@ -1,0 +1,3 @@
+﻿# Source File Hash: 4ea00c73d3ce6688025fccedd3bdd9e76cae540b688e99be80054c7dd1f977b7,# Units: METRIC
+Pipe_ID,From,To,Length (m),Diameter (mm),Material,Velocity (m/s),HeadLoss (m),Flow (L/min)
+P1,N1,N2,1.0050e+02,5.2900e+01,Steel_ASTM_A53,7.5831e-01,1.7830e+00,1.0000e+02

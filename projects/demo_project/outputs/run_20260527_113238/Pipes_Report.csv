@@ -1,0 +1,4 @@
+Pipe_ID,Diameter(mm),Length(m),Flow(L/min),Velocity(m/s),HeadLoss_F(m),HeadLoss_K(m),HeadLoss_Total(m),Surge_Index,Status,Formula
+main_pipe,35.2,,140.00,2.398,11.8136,0.0000,11.8136,1.435,OK,FOR-DW-001
+branch_A,35.2,,140.00,2.398,6.8913,0.0000,6.8913,1.435,OK,FOR-DW-001
+branch_B,35.2,,140.00,2.398,7.8757,0.0000,7.8757,1.435,OK,FOR-DW-001

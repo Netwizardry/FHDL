@@ -1,0 +1,9 @@
+System_Setup {
+    Units = METRIC;
+    Temp = 20.0;
+}
+
+Topology {
+    node N2(10.0000, 0.0000, 0.0000, JUNCTION);
+    pipe P1(N1, N2, 50.0, Steel);
+}

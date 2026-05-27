@@ -64,7 +64,7 @@ AST를 실제 설계 객체로 변환하고 단위 정규화 및 참조 해결�
     *   `p_gauge`: 게이지 압력 (Pa).
     *   `is_boundary`: 경계 조건 노드 여부 (Source/Terminal).
 *   **NetworkEdge:**
-    *   `q_actual`: 실제 흐르는 유량 ($m^3/h$).
+    *   `q_actual`: 실제 흐르는 유량 ($m^3/s$, 내부 SI 단위).
     *   `v_actual`: 실제 유속 ($m/s$).
     *   `h_loss_f`: 마찰 손실 수두 (m).
     *   `h_loss_k`: 국부 손실 수두 (m).

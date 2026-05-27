@@ -1,0 +1,17 @@
+
+System_Setup {
+    Temp = 20.0;
+}
+
+Topology {
+    node N1(0, 0, 10, PUMP);
+    node N2(50, 0, 10, JUNCTION);
+    node N3(100, 20, 10, TERMINAL, 120, 0.15);
+    node N4(100, -20, 5, TERMINAL, 80, 0.20);
+    
+    pipe P1(N1, N2, 80A, Steel_ASTM_A53);
+    pipe P2(N2, N3, 50A, Steel_ASTM_A53);
+    pipe P3(N2, N4, 50A, Steel_ASTM_A53);
+    pipe P4(N3, N4, 40A, Steel_ASTM_A53);
+}
+    

@@ -1,0 +1,6 @@
+﻿# Source File Hash: 487607d3dd57d73850986fc59621f7f0004644453c3996d6f800b818b2ad28c9
+Pipe_ID,From,To,Length (m),Diameter (mm),Material,Velocity (m/s),Head Loss (m),Flow (L/min)
+P1,N1,N2,0.0,80.7,Steel_ASTM_A53,0.0,0.0,0.0
+P2,N2,N3,0.0,52.9,Steel_ASTM_A53,0.0,0.0,0.0
+P3,N2,N4,0.0,52.9,Steel_ASTM_A53,0.0,0.0,0.0
+P4,N3,N4,0.0,41.2,Steel_ASTM_A53,0.0,0.0,0.0

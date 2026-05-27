@@ -1,0 +1,52 @@
+{
+  "status": "OK",
+  "total_flow_m3h": 8.4,
+  "required_head_m": 28.30236165461818,
+  "worst_path": [
+    "reservoir",
+    "sprinkler_A"
+  ],
+  "recommended_pump": {
+    "flow_m3h": 8.4,
+    "head_m": 31.13259782008
+  },
+  "recommended_tank_volume_m3": 8.4,
+  "converged": true,
+  "diagnostics": [
+    {
+      "code": "WRN004",
+      "severity": "WARNING",
+      "message": "배관 'main_pipe': 수충격 위험 지수 1.44 > 0.8",
+      "related_id": ""
+    },
+    {
+      "code": "WRN004",
+      "severity": "WARNING",
+      "message": "배관 'branch_A': 수충격 위험 지수 1.44 > 0.8",
+      "related_id": ""
+    },
+    {
+      "code": "WRN004",
+      "severity": "WARNING",
+      "message": "배관 'branch_B': 수충격 위험 지수 1.44 > 0.8",
+      "related_id": ""
+    }
+  ],
+  "provenance_map": {
+    "main_pipe": {
+      "formula_id": "FOR-DW-001",
+      "diameter_mode": "AUTO",
+      "flow_m3s": 0.0023333333333333335
+    },
+    "branch_A": {
+      "formula_id": "FOR-DW-001",
+      "diameter_mode": "AUTO",
+      "flow_m3s": 0.0023333333333333335
+    },
+    "branch_B": {
+      "formula_id": "FOR-DW-001",
+      "diameter_mode": "AUTO",
+      "flow_m3s": 0.0023333333333333335
+    }
+  }
+}

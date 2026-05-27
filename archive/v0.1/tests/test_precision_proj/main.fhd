@@ -1,0 +1,12 @@
+System_Setup {
+    Units = METRIC;
+    Temp = 20.0;
+    Altitude = 0.0;
+    Step = 0.1;
+}
+
+Topology {
+    node N1(0, 0, 10.123456789, TANK);
+    node N2(10, 0, 0, JUNCTION);
+    pipe P1(N1, N2, 60.0, Steel);
+}

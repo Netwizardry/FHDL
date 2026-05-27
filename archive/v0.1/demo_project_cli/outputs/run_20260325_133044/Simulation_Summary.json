@@ -1,0 +1,13 @@
+{
+    "metadata": {
+        "fhd_hash": "487607d3dd57d73850986fc59621f7f0004644453c3996d6f800b818b2ad28c9",
+        "timestamp": "2026-03-25 13:30:44.612463",
+        "fluid_type": "Water",
+        "temperature": 20.0
+    },
+    "results": {
+        "total_terminal_flow_lmin": 200.0,
+        "node_count": 4,
+        "pipe_count": 4
+    }
+}

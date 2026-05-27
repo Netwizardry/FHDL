@@ -1,0 +1,5 @@
+Node_ID,Head(m),Pressure(MPa),Flow_In(L/min),Flow_Out(L/min),NPSHa(m),Sizing_Mode,Formula
+reservoir,11.5000,0.0147,140.00,140.00,0.000,MANUAL,
+j1,11.5000,0.0636,140.00,140.00,0.000,MANUAL,
+sprinkler_A,11.5000,0.0832,80.00,80.00,0.000,MANUAL,
+nozzle_B,11.5000,0.0929,60.00,60.00,0.000,MANUAL,

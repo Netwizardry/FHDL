@@ -1,0 +1,11 @@
+
+    System_Setup { Temp = 20.0; }
+    Topology {
+        // Essential Source
+        node N1(0, 0, 0, TANK);
+        
+        /* Temporary Node to be deleted */
+        
+        pipe P1(N1, N2, 50A, Steel);
+    }
+    

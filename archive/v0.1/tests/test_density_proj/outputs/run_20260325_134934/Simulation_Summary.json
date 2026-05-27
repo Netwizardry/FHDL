@@ -1,0 +1,13 @@
+{
+    "metadata": {
+        "fhd_hash": "test_hash",
+        "timestamp": "2026-03-25 13:49:35.000630",
+        "fluid_type": "Water",
+        "temperature": 50.0
+    },
+    "results": {
+        "total_terminal_flow_lmin": 0,
+        "node_count": 1,
+        "pipe_count": 0
+    }
+}
