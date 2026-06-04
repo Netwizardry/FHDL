@@ -105,7 +105,10 @@ FHDL/
 - [x] GUI 5패널 + 아이소메트릭 2.5D + 그래프 직접 편집(Inverse Sync)
 - [x] 하단 명령 콘솔(TUI) + 단축키
 - [x] 단일 진실원화(language·fittings·materials) + 코드 기준 문서 재작성
-- [ ] (로드맵) 펌프 커브 운전점, 복합 루프망(Hardy-Cross), 수충격 정밀, CAD/BIM
+- [x] 성능 최적화(1000노드<1s)·저널 복구·정확도 벤치마크·패키징·아이콘
+- [ ] **(차후 대형) 복합 루프망 Hardy-Cross** — `docs/ROADMAP.md` §1
+- [ ] **(차후 대형) 수충격 MOC 정밀 해석** — `docs/ROADMAP.md` §2
+- [ ] (로드맵) CAD/BIM 연동, 다국어(i18n)
 
 ---
 

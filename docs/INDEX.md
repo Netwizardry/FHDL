@@ -14,5 +14,6 @@
 | [GUI](GUI.md) | 5패널·콘솔·그래프 편집·단축키 |
 | [COMMANDS](COMMANDS.md) | 하단 명령 콘솔(TUI) 레퍼런스 |
 | [DIAGNOSTICS](DIAGNOSTICS.md) | 진단 코드(SYN/SEM/NET/CAL/WRN) |
+| [ROADMAP](ROADMAP.md) | 차후 대형 작업(Hardy-Cross 루프망, 수충격 MOC) |
 
 설치·실행·빠른 시작은 루트 [README](../README.md) 참조.
