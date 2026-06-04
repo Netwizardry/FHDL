@@ -128,8 +128,13 @@ def load_project(project_dir: str) -> ProjectLoad:
     if source and os.path.exists(paths["db"]):
         db = ProjectDB(paths["db"])
         try:
+            # 미완료 저장(DIRTY) 복구 — 복구되면 캐시를 신뢰하지 않음
+            recovered = db.recover()
             analyzed = db.get_meta("analyzed_checksum")
-            cache_valid = bool(analyzed) and analyzed == _checksum(source)
+            cache_valid = (not recovered) and bool(analyzed) and analyzed == _checksum(source)
+            if recovered:
+                meta = dict(meta)
+                meta["recovered"] = True
             if cache_valid:
                 # 파싱으로 entity_map 만 재구성(저렴) + DB 결과 복원(재계산 회피)
                 em = _parse_entity_map(source)

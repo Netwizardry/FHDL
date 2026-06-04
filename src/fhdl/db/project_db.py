@@ -197,6 +197,19 @@ class ProjectDB:
         ).fetchone()
         return (row["journal_status"] == "DIRTY") if row else False
 
+    def recover(self) -> bool:
+        """미완료 저장(DIRTY) 복구.
+
+        save_analysis_result 는 원자적 트랜잭션이므로 DB 자체는 항상 일관 상태
+        (완전 저장 또는 롤백)다. DIRTY 는 마지막 저장이 중단됐음을 뜻하므로,
+        저널을 CLEAN 으로 되돌리고 '복구됨'(True)을 반환한다. 호출측은 이때
+        결과 캐시를 신뢰하지 않고 재해석을 유도해야 한다.
+        """
+        if self.is_dirty():
+            self._set_journal_clean()
+            return True
+        return False
+
     # ------------------------------------------------------------------
     # 원자적 저장 (Stage → Verify → Swap)
     # ------------------------------------------------------------------

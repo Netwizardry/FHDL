@@ -87,3 +87,28 @@ def test_project_independence():
         assert "1200m" in lb.source and "1200m" not in la.source
         # config.fhproj(구 포맷) 미생성
         assert not os.path.exists(os.path.join(a, "config.fhproj"))
+
+
+def test_journal_recovery_invalidates_cache():
+    """중단된 저장(DIRTY)은 복구되고 캐시는 무효화되어야 한다."""
+    import os
+    from fhdl.db.project_db import ProjectDB
+    from fhdl.core.project_io import project_paths
+    with tempfile.TemporaryDirectory() as d:
+        r = AnalysisPipeline().run(_SRC)
+        save_project(d, _SRC, r)               # 정상 저장 (캐시 유효)
+        assert load_project(d).cache_valid is True
+        # 저장 중단 시뮬레이션: 저널을 DIRTY 로 남김
+        db = ProjectDB(project_paths(d)["db"])
+        db._set_journal_dirty()
+        assert db.is_dirty() is True
+        db.close()
+        # 재열기 → 복구 + 캐시 무효
+        loaded = load_project(d)
+        assert loaded.cache_valid is False
+        assert loaded.result is None
+        assert loaded.meta.get("recovered") is True
+        # 저널이 CLEAN 으로 복구됨
+        db2 = ProjectDB(project_paths(d)["db"])
+        assert db2.is_dirty() is False
+        db2.close()

@@ -87,6 +87,7 @@ class HydraulicSolver:
         self.cancel_fn = cancel_fn
         self._diags: List[DiagnosticItem] = []
         self._pump_suction: Dict[str, float] = {}
+        self._pipe_lookup: Optional[Dict] = None
 
         self._nu = self.fluid.kinematic_viscosity
         self._rho = self.fluid.density
@@ -214,10 +215,14 @@ class HydraulicSolver:
                            f"'{f}'와 '{t}'를 잇는 pipe 블록을 정의하세요.")
 
     def _get_pipe(self, from_id: str, to_id: str) -> Optional[PipeEntity]:
-        for p in self.em.pipes.values():
-            if p.start_id == from_id and p.end_id == to_id:
-                return p
-        return None
+        # (start,end) → pipe O(1) 조회 (대규모 네트워크 성능). 최초 1회 구축.
+        lookup = self._pipe_lookup
+        if lookup is None:
+            lookup = {}
+            for p in self.em.pipes.values():
+                lookup.setdefault((p.start_id, p.end_id), p)
+            self._pipe_lookup = lookup
+        return lookup.get((from_id, to_id))
 
     def _node_elevation(self, nid: str) -> float:
         entity = self.em.get_node_entity(nid)
