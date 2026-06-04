@@ -846,11 +846,13 @@ class NodeEditDialog(QDialog):
     get_values() 는 {dsl_key: 입력값} 을 반환한다.
     """
 
-    def __init__(self, node_id: str, node_type: str, fields, parent=None):
+    def __init__(self, node_id: str, node_type: str, fields, parent=None,
+                 allow_delete: bool = False):
         super().__init__(parent)
         self.setWindowTitle(f"노드 편집 — {node_id} ({node_type})")
         self.setMinimumWidth(320)
         self._edits = {}
+        self.delete_requested = False
 
         lay = QVBoxLayout(self)
         title = QLabel(f"<b>{node_id}</b> 의 속성을 수정합니다")
@@ -868,9 +870,17 @@ class NodeEditDialog(QDialog):
             QDialogButtonBox.StandardButton.Ok |
             QDialogButtonBox.StandardButton.Cancel
         )
+        if allow_delete:
+            del_btn = btns.addButton("삭제", QDialogButtonBox.ButtonRole.DestructiveRole)
+            del_btn.setStyleSheet("background:#7A2E2E; color:#FFF;")
+            del_btn.clicked.connect(self._on_delete)
         btns.accepted.connect(self.accept)
         btns.rejected.connect(self.reject)
         lay.addWidget(btns)
+
+    def _on_delete(self):
+        self.delete_requested = True
+        self.accept()
 
     def get_values(self) -> dict:
         return {k: e.text().strip() for k, e in self._edits.items()}

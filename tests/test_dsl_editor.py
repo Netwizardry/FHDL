@@ -4,8 +4,8 @@ sys.path.insert(0, "src")
 
 from fhdl.core.dsl_editor import (
     add_connection, add_link, add_pipe, has_link, remove_connection,
-    remove_link, remove_pipe, set_constraint_attributes, set_node_attributes,
-    set_pipe_attributes, default_pipe_id,
+    remove_link, remove_node, remove_pipe, set_constraint_attributes,
+    set_node_attributes, set_pipe_attributes, default_pipe_id,
 )
 from fhdl.core.parser import FHDLParser
 from fhdl.core.semantic import SemanticAnalyzer
@@ -151,6 +151,28 @@ def test_remove_link():
     back = remove_link(out, "src", "t2")
     assert default_pipe_id("src", "t2") not in back
     assert "connect src -> t2;" not in back
+
+
+def test_remove_node_cascades():
+    """노드 삭제 시 그 노드의 배관·connect 도 함께 제거되어야 한다."""
+    src = """system m { unit_system=METRIC; fluid=water; temp=20; }
+tank src { z=10m; }
+junction j { z=5m; }
+terminal t { z=0m; required_q=60lpm; }
+pipe p1 { start=src; end=j; length=10m; diameter=50mm; material=Steel; }
+pipe p2 { start=j; end=t; length=10m; diameter=50mm; material=Steel; }
+connect src -> j -> t;
+"""
+    out = remove_node(src, "j")
+    # j 블록·관련 배관 제거
+    assert "junction j {" not in out
+    assert "pipe p1 {" not in out and "pipe p2 {" not in out
+    # j 가 든 connect 제거, 다른 노드는 보존
+    assert "j" not in out.replace("// ", "")  # j 식별자 흔적 없음(대략)
+    assert "tank src {" in out and "terminal t {" in out
+    # 재파싱 통과
+    em = _analyze(out)
+    assert "j" not in em.junctions
 
 
 def test_set_constraint_existing_block():

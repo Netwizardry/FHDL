@@ -170,11 +170,14 @@ class MainWindow(QMainWindow):
         self._stop_action.setEnabled(False)
         run_menu.addAction(self._stop_action)
 
-        # 설정 메뉴 — 제약 조건 편집
+        # 설정 메뉴 — 제약 조건 편집 / 부품 라이브러리 관리
         settings_menu = mb.addMenu("설정(&T)")
         constraint_action = QAction("제약 조건 편집…", self)
         constraint_action.triggered.connect(self._on_edit_constraints)
         settings_menu.addAction(constraint_action)
+        library_action = QAction("부품 라이브러리 관리…", self)
+        library_action.triggered.connect(self._on_manage_library)
+        settings_menu.addAction(library_action)
 
     def _build_status_bar(self):
         sb = self.statusBar()
@@ -329,14 +332,23 @@ class MainWindow(QMainWindow):
         if ent is None:
             return
         from .panels.editor_panel import NodeEditDialog
-        from ..core.dsl_editor import set_node_attributes
+        from ..core.dsl_editor import set_node_attributes, remove_node
 
         ntype = self._node_type_of(node_id)
-        dlg = NodeEditDialog(node_id, ntype, self._node_fields(ent, ntype), self)
+        dlg = NodeEditDialog(node_id, ntype, self._node_fields(ent, ntype), self,
+                             allow_delete=True)
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
-        new_src = set_node_attributes(
-            self._editor_panel.get_source(), node_id, dlg.get_values())
+        src = self._editor_panel.get_source()
+        if dlg.delete_requested:
+            ans = QMessageBox.question(
+                self, "노드 삭제",
+                f"노드 '{node_id}' 와 연결된 배관·connect 를 삭제할까요?")
+            if ans != QMessageBox.StandardButton.Yes:
+                return
+            new_src = remove_node(src, node_id)
+        else:
+            new_src = set_node_attributes(src, node_id, dlg.get_values())
         self._editor_panel.set_source(new_src)
         self._run_analysis()
 
@@ -355,6 +367,17 @@ class MainWindow(QMainWindow):
             self._editor_panel.get_source(), pipe_id, dlg.get_values())
         self._editor_panel.set_source(new_src)
         self._run_analysis()
+
+    def _on_manage_library(self):
+        from .library_dialog import LibraryManagerDialog
+        from ..db.library_db import LibraryDB
+        db_path = os.path.join(os.getcwd(), "data", "library.db")
+        os.makedirs(os.path.dirname(db_path), exist_ok=True)
+        db = LibraryDB(db_path)
+        try:
+            LibraryManagerDialog(db, self).exec()
+        finally:
+            db.close()
 
     def _on_edit_constraints(self):
         from .panels.editor_panel import NodeEditDialog

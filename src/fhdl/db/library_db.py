@@ -189,5 +189,142 @@ class LibraryDB:
         ).fetchone()
         return dict(row) if row else None
 
+    # ------------------------------------------------------------------
+    # CRUD — 부품 데이터 신설/수정/삭제 (최신 데이터 유지)
+    # ------------------------------------------------------------------
+
+    # --- 관경 ---
+    def list_pipe_sizes(self, standard: str = "") -> List[Dict]:
+        if standard:
+            rows = self._conn.execute(
+                "SELECT * FROM pipe_sizes WHERE standard=? ORDER BY inner_diameter", (standard,)
+            ).fetchall()
+        else:
+            rows = self._conn.execute(
+                "SELECT * FROM pipe_sizes ORDER BY standard, inner_diameter").fetchall()
+        return [dict(r) for r in rows]
+
+    def upsert_pipe_size(self, standard: str, nominal_size: str, inner_diameter: float,
+                         outer_diameter: float = None, wall_thickness: float = None) -> None:
+        self._conn.execute(
+            """INSERT INTO pipe_sizes(standard,nominal_size,inner_diameter,outer_diameter,wall_thickness)
+               VALUES(?,?,?,?,?)
+               ON CONFLICT(standard,nominal_size) DO UPDATE SET
+                 inner_diameter=excluded.inner_diameter,
+                 outer_diameter=excluded.outer_diameter,
+                 wall_thickness=excluded.wall_thickness""",
+            (standard, nominal_size, inner_diameter, outer_diameter, wall_thickness),
+        )
+        self._conn.commit()
+
+    def delete_pipe_size(self, standard: str, nominal_size: str) -> int:
+        cur = self._conn.execute(
+            "DELETE FROM pipe_sizes WHERE standard=? AND nominal_size=?", (standard, nominal_size))
+        self._conn.commit()
+        return cur.rowcount
+
+    # --- 재질 ---
+    def list_materials(self) -> List[Dict]:
+        return [dict(r) for r in self._conn.execute(
+            "SELECT * FROM pipe_materials ORDER BY material_id").fetchall()]
+
+    def upsert_material(self, material_id: str, name: str, roughness_m: float = 0.000045,
+                        c_factor_hw: float = 120.0, max_pressure_pa: float = 2_000_000.0,
+                        wave_velocity_ms: float = 1200.0) -> None:
+        self._conn.execute(
+            """INSERT INTO pipe_materials(material_id,name,roughness_m,c_factor_hw,max_pressure_pa,wave_velocity_ms)
+               VALUES(?,?,?,?,?,?)
+               ON CONFLICT(material_id) DO UPDATE SET
+                 name=excluded.name, roughness_m=excluded.roughness_m,
+                 c_factor_hw=excluded.c_factor_hw, max_pressure_pa=excluded.max_pressure_pa,
+                 wave_velocity_ms=excluded.wave_velocity_ms""",
+            (material_id, name, roughness_m, c_factor_hw, max_pressure_pa, wave_velocity_ms),
+        )
+        self._conn.commit()
+
+    def delete_material(self, material_id: str) -> int:
+        cur = self._conn.execute("DELETE FROM pipe_materials WHERE material_id=?", (material_id,))
+        self._conn.commit()
+        return cur.rowcount
+
+    # --- 피팅 K ---
+    def list_fittings(self) -> List[Dict]:
+        return [dict(r) for r in self._conn.execute(
+            "SELECT * FROM fitting_kfactors ORDER BY fitting_type, nominal_size").fetchall()]
+
+    def upsert_fitting(self, fitting_type: str, k_factor: float,
+                       nominal_size: str = "all", description: str = "") -> None:
+        # (fitting_type, nominal_size) 유일성 보장 (테이블엔 UNIQUE 없으므로 수동 갱신)
+        row = self._conn.execute(
+            "SELECT id FROM fitting_kfactors WHERE fitting_type=? AND nominal_size=?",
+            (fitting_type, nominal_size)).fetchone()
+        if row:
+            self._conn.execute(
+                "UPDATE fitting_kfactors SET k_factor=?, description=? WHERE id=?",
+                (k_factor, description, row["id"]))
+        else:
+            self._conn.execute(
+                "INSERT INTO fitting_kfactors(fitting_type,nominal_size,k_factor,description) VALUES(?,?,?,?)",
+                (fitting_type, nominal_size, k_factor, description))
+        self._conn.commit()
+
+    def delete_fitting(self, fitting_type: str, nominal_size: str = "all") -> int:
+        cur = self._conn.execute(
+            "DELETE FROM fitting_kfactors WHERE fitting_type=? AND nominal_size=?",
+            (fitting_type, nominal_size))
+        self._conn.commit()
+        return cur.rowcount
+
+    # --- 펌프 커브 ---
+    def list_pump_curves(self) -> List[Dict]:
+        return [dict(r) for r in self._conn.execute(
+            "SELECT * FROM pump_curves ORDER BY curve_id").fetchall()]
+
+    def upsert_pump_curve(self, curve_id: str, manufacturer: str = "", model: str = "",
+                          rated_flow: float = 0.0, rated_head: float = 0.0, npshr: float = 0.5,
+                          points: List[Tuple[float, float, float]] = None) -> None:
+        self._conn.execute(
+            """INSERT INTO pump_curves(curve_id,manufacturer,model,rated_flow,rated_head,npshr)
+               VALUES(?,?,?,?,?,?)
+               ON CONFLICT(curve_id) DO UPDATE SET
+                 manufacturer=excluded.manufacturer, model=excluded.model,
+                 rated_flow=excluded.rated_flow, rated_head=excluded.rated_head, npshr=excluded.npshr""",
+            (curve_id, manufacturer, model, rated_flow, rated_head, npshr))
+        if points is not None:
+            self._conn.execute("DELETE FROM pump_curve_points WHERE curve_id=?", (curve_id,))
+            self._conn.executemany(
+                "INSERT INTO pump_curve_points(curve_id,flow,head,efficiency) VALUES(?,?,?,?)",
+                [(curve_id, f, h, e) for f, h, e in points])
+        self._conn.commit()
+
+    def delete_pump_curve(self, curve_id: str) -> int:
+        self._conn.execute("DELETE FROM pump_curve_points WHERE curve_id=?", (curve_id,))
+        cur = self._conn.execute("DELETE FROM pump_curves WHERE curve_id=?", (curve_id,))
+        self._conn.commit()
+        return cur.rowcount
+
+    # --- 유체 물성 ---
+    def list_fluids(self) -> List[Dict]:
+        return [dict(r) for r in self._conn.execute(
+            "SELECT * FROM fluid_properties ORDER BY fluid_type, temperature").fetchall()]
+
+    def upsert_fluid(self, fluid_type: str, temperature: float, density: float,
+                     viscosity: float, vapor_pressure: float = 0.0) -> None:
+        self._conn.execute(
+            """INSERT INTO fluid_properties(fluid_type,temperature,density,viscosity,vapor_pressure)
+               VALUES(?,?,?,?,?)
+               ON CONFLICT(fluid_type,temperature) DO UPDATE SET
+                 density=excluded.density, viscosity=excluded.viscosity,
+                 vapor_pressure=excluded.vapor_pressure""",
+            (fluid_type, temperature, density, viscosity, vapor_pressure))
+        self._conn.commit()
+
+    def delete_fluid(self, fluid_type: str, temperature: float) -> int:
+        cur = self._conn.execute(
+            "DELETE FROM fluid_properties WHERE fluid_type=? AND temperature=?",
+            (fluid_type, temperature))
+        self._conn.commit()
+        return cur.rowcount
+
     def close(self):
         self._conn.close()

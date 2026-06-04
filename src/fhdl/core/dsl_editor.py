@@ -165,6 +165,44 @@ def remove_pipe(source: str, pipe_id: str) -> str:
 # 연결(드래그) = pipe + connect 한 쌍
 # ---------------------------------------------------------------------------
 
+def remove_node(source: str, node_id: str) -> str:
+    """노드 블록과 그 노드에 연결된 배관·connect 문을 함께 제거한다.
+
+    - tank/pump/junction/terminal 블록 삭제
+    - start 또는 end 가 node_id 인 pipe 블록 삭제
+    - node_id 가 포함된 connect 문 삭제
+    """
+    # 1) 노드에 연결된 배관 id 수집 후 pipe 블록·connect 제거
+    types = "|".join(_NODE_TYPES)
+    pipe_iter = re.finditer(
+        r"\bpipe\s+(\w+)\s*\{(.*?)\}", source, re.DOTALL)
+    related_pipes = []
+    for m in pipe_iter:
+        body = m.group(2)
+        if re.search(rf"\bstart\s*=\s*{re.escape(node_id)}\b", body) or \
+           re.search(rf"\bend\s*=\s*{re.escape(node_id)}\b", body):
+            related_pipes.append(m.group(1))
+    for pid in related_pipes:
+        source = remove_pipe(source, pid)
+
+    # 2) 노드 블록 삭제
+    block_re = re.compile(
+        rf"\b(?:{types})\s+{re.escape(node_id)}\s*\{{.*?\}}\s*\n?", re.DOTALL)
+    source = block_re.sub("", source)
+
+    # 3) connect 문에서 node_id (및 삭제된 pipe id) 가 든 줄 제거
+    drop_ids = {node_id, *related_pipes}
+    out_lines = []
+    for line in source.splitlines(keepends=True):
+        stripped = line.strip()
+        if stripped.startswith("connect"):
+            tokens = re.split(r"->|\s|;", stripped)
+            if any(tok in drop_ids for tok in tokens if tok):
+                continue
+        out_lines.append(line)
+    return "".join(out_lines)
+
+
 def set_constraint_attributes(source: str, attrs: Dict[str, str]) -> str:
     """constraint 블록의 속성을 교체/추가한다. 블록이 없으면 새로 만든다."""
     m = re.search(r"(\bconstraint\s*\{)(.*?)(\})", source, re.DOTALL)
