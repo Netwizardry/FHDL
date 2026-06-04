@@ -295,6 +295,23 @@ def _pump_npsha(alt_m, temp=20):
     return next(n.npsha for n in r.node_results if n.node_id == "pp")
 
 
+def test_result_exposes_k_and_altitude():
+    """결과 모델이 피팅 K·절대해발·대기압을 노출해야 한다 (결과 패널 표시용)."""
+    code = """
+system m { unit_system=METRIC; fluid=water; temp=20; altitude=1000m; }
+tank s { z=20m; }
+terminal t { z=0m; required_q=100lpm; }
+pipe p { start=s; end=t; length=30m; diameter=50mm; material=Steel; fittings=[valve_gate, elbow_90]; }
+connect s -> t;
+"""
+    r = AnalysisPipeline().run(code)
+    pr = r.pipe_results[0]
+    assert abs(pr.k_total - 1.1) < 1e-6        # valve_gate 0.2 + elbow_90 0.9
+    nr = next(n for n in r.node_results if n.node_id == "t")
+    assert abs(nr.abs_altitude - 1000.0) < 1e-6  # datum 1000 + z 0
+    assert 88000 < nr.atm_pressure < 91000       # 약 1000m 대기압
+
+
 def test_atm_pressure_decreases_with_altitude():
     from fhdl.core.models import FluidConfig
     assert FluidConfig.atm_pressure_at(0) > FluidConfig.atm_pressure_at(1000) > \

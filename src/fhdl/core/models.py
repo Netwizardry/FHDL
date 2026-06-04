@@ -257,6 +257,8 @@ class PipeCalcResult:
     surge_index: float = 0.0
     formula_id: str = "FOR-DW-001"
     status: str = "OK"
+    k_total: float = 0.0        # 국부손실계수 합 (수동 + 자동피팅)
+    k_auto: float = 0.0         # 자동 엘보(꺾임각) K
 
     @property
     def h_loss_total(self) -> float:
@@ -271,6 +273,8 @@ class NodeCalcResult:
     flow_in: float = 0.0        # m³/s
     flow_out: float = 0.0       # m³/s
     npsha: float = 0.0          # m (펌프 노드)
+    abs_altitude: float = 0.0   # m (절대 해발 = datum + z)
+    atm_pressure: float = 0.0   # Pa (해당 노드 해발의 대기압)
     sizing_mode: SizingModeType = "MANUAL"
     provenance_formula: str = ""
     diagnostic_code: str = ""

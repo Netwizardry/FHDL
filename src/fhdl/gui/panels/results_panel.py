@@ -39,13 +39,14 @@ class ResultsPanel(QWidget):
         # 배관 상세 탭
         self._pipes_table = _ResultTable(
             ["배관 ID", "관경(mm)", "유량(L/min)", "유속(m/s)",
-             "손실수두(m)", "수충격", "상태", "공식"]
+             "손실수두(m)", "K계수(자동)", "수충격", "상태", "공식"]
         )
         tabs.addTab(self._pipes_table, "배관 결과")
 
         # 노드 상세 탭
         self._nodes_table = _ResultTable(
-            ["노드 ID", "수두(m)", "압력(MPa)", "유입(L/min)", "유출(L/min)", "NPSHa(m)"]
+            ["노드 ID", "수두(m)", "압력(MPa)", "유입(L/min)", "유출(L/min)",
+             "NPSHa(m)", "절대해발(m)", "대기압(kPa)"]
         )
         tabs.addTab(self._nodes_table, "노드 결과")
 
@@ -75,6 +76,7 @@ class ResultsPanel(QWidget):
                 f"{r.flow * 60000:.2f}",
                 f"{r.velocity:.3f}",
                 f"{r.h_loss_total:.4f}",
+                f"{r.k_total:.2f} ({r.k_auto:.2f})",
                 f"{r.surge_index:.3f}",
                 r.status,
                 r.formula_id,
@@ -96,6 +98,8 @@ class ResultsPanel(QWidget):
                 f"{r.flow_in * 60000:.2f}",
                 f"{r.flow_out * 60000:.2f}",
                 f"{r.npsha:.3f}",
+                f"{r.abs_altitude:.1f}",
+                f"{r.atm_pressure / 1000:.2f}",
             ]
             for j, v in enumerate(vals):
                 item = QTableWidgetItem(str(v))

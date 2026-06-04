@@ -586,6 +586,8 @@ class HydraulicSolver:
                 flow_in=demand.get(nid, 0.0),
                 flow_out=demand.get(nid, 0.0),
                 npsha=npsha,
+                abs_altitude=self._abs_altitude(nid),
+                atm_pressure=self._atm_pa_at(nid),
             ))
 
         # 배관 결과
@@ -642,6 +644,8 @@ class HydraulicSolver:
                 surge_index=surge_idx,
                 formula_id=formula,
                 status=status,
+                k_total=pipe.total_k,
+                k_auto=pipe.auto_k,
             ))
 
         return node_results, pipe_results
