@@ -213,14 +213,18 @@ def serialize_entity_map_to_fhd(entity_map) -> str:
 
     for t in em.tanks.values():
         lines.append(f"tank {t.entity_id} {{")
-        lines.append(f"    elevation = {t.elevation}m;")
+        lines.append(f"    z = {t.elevation}m;")
+        if t.x or t.y:
+            lines.append(f"    x = {t.x}; y = {t.y};")
         if t.volume != float("inf"):
             lines.append(f"    volume = {t.volume}m3;")
         lines.append("}\n")
 
     for p in em.pumps.values():
         lines.append(f"pump {p.entity_id} {{")
-        lines.append(f"    elevation = {p.elevation}m;")
+        lines.append(f"    z = {p.elevation}m;")
+        if p.x or p.y:
+            lines.append(f"    x = {p.x}; y = {p.y};")
         if p.flow.mode == "MANUAL":
             lines.append(f"    flow = {p.flow.value}m3s;")
         if p.head.mode == "MANUAL":
@@ -229,12 +233,16 @@ def serialize_entity_map_to_fhd(entity_map) -> str:
 
     for j in em.junctions.values():
         lines.append(f"junction {j.entity_id} {{")
-        lines.append(f"    elevation = {j.elevation}m;")
+        lines.append(f"    z = {j.elevation}m;")
+        if j.x or j.y:
+            lines.append(f"    x = {j.x}; y = {j.y};")
         lines.append("}\n")
 
     for t in em.terminals.values():
         lines.append(f"terminal {t.entity_id} {{")
-        lines.append(f"    elevation = {t.elevation}m;")
+        lines.append(f"    z = {t.elevation}m;")
+        if t.x or t.y:
+            lines.append(f"    x = {t.x}; y = {t.y};")
         if t.required_q > 0:
             lines.append(f"    required_q = {t.required_q * 1e6:.2f}Ls;")
         if t.required_p > 0:

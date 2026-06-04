@@ -123,7 +123,7 @@ class SemanticAnalyzer:
             return
 
         if ctype == "tank":
-            elev = self._as_si(a.get("elevation", (0.0, "m")))
+            elev = self._elev(a)
             self._check_elevation(elev, span)
             em.tanks[cid] = TankEntity(
                 entity_id=cid,
@@ -136,7 +136,7 @@ class SemanticAnalyzer:
             )
 
         elif ctype == "pump":
-            elev = self._as_si(a.get("elevation", (0.0, "m")))
+            elev = self._elev(a)
             self._check_elevation(elev, span)
             flow_raw = a.get("flow", "auto")
             head_raw = a.get("head", "auto")
@@ -158,7 +158,7 @@ class SemanticAnalyzer:
             )
 
         elif ctype == "junction":
-            elev = self._as_si(a.get("elevation", (0.0, "m")))
+            elev = self._elev(a)
             self._check_elevation(elev, span)
             em.junctions[cid] = JunctionEntity(
                 entity_id=cid,
@@ -169,7 +169,7 @@ class SemanticAnalyzer:
             )
 
         elif ctype == "terminal":
-            elev = self._as_si(a.get("elevation", (0.0, "m")))
+            elev = self._elev(a)
             self._check_elevation(elev, span)
             em.terminals[cid] = TerminalEntity(
                 entity_id=cid,
@@ -293,6 +293,15 @@ class SemanticAnalyzer:
             return SizingState(mode="AUTO", value=0.0)
         val = self._as_si(raw) if isinstance(raw, tuple) else self._as_si((raw, default_unit))
         return SizingState(mode="MANUAL", value=val)
+
+    def _elev(self, attrs: dict) -> float:
+        """노드 고도(z) 추출.
+
+        명세 좌표 키는 (x, y, z)이며 z가 고도이다.
+        'z'를 1차 키로 받고 'elevation'은 하위호환 별칭으로 허용한다.
+        """
+        raw = attrs.get("z", attrs.get("elevation", (0.0, "m")))
+        return self._as_si(raw)
 
     def _check_elevation(self, elev: float, span: SourceSpan):
         if not (-100 <= elev <= 10000):

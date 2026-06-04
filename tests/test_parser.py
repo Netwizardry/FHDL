@@ -94,3 +94,43 @@ def test_duplicate_connect_chain():
     # (1개 체인은 에러지만 파서가 계속 파싱)
     error_codes = [d.code for d in diags]
     assert "SYN001" in error_codes
+
+
+# ---------------------------------------------------------------------------
+# 좌표 (x, y, z) — 명세 정본 키 'z' 와 하위호환 별칭 'elevation'
+# ---------------------------------------------------------------------------
+
+from fhdl.core.semantic import SemanticAnalyzer
+from fhdl.core.parser import serialize_entity_map_to_fhd
+
+_HDR = "system m { unit_system = METRIC; fluid = water; temp = 20; }\n"
+
+
+def _analyze(body: str):
+    ast, _ = FHDLParser().parse(_HDR + body)
+    return SemanticAnalyzer().analyze(ast)[0]
+
+
+def test_coord_z_is_elevation():
+    """명세 키 'z' 가 고도로 인식되어야 한다."""
+    em = _analyze("junction n1 { z = 10m; x = 5; y = 7; }")
+    j = em.junctions["n1"]
+    assert j.elevation == 10.0
+    assert j.x == 5.0 and j.y == 7.0
+
+
+def test_coord_elevation_alias():
+    """하위호환: 'elevation' 도 동일하게 고도로 인식되어야 한다."""
+    ez = _analyze("junction n1 { elevation = 10m; }").junctions["n1"]
+    zz = _analyze("junction n1 { z = 10m; }").junctions["n1"]
+    assert ez.elevation == zz.elevation == 10.0
+
+
+def test_coord_roundtrip_preserves_xyz():
+    """직렬화 → 재파싱 시 x, y, z 가 보존되어야 한다."""
+    em = _analyze("terminal t1 { z = 8m; x = 12; y = -3; required_q = 60lpm; }")
+    fhd = serialize_entity_map_to_fhd(em)
+    ast, _ = FHDLParser().parse(fhd)
+    t = SemanticAnalyzer().analyze(ast)[0].terminals["t1"]
+    assert t.elevation == 8.0
+    assert t.x == 12.0 and t.y == -3.0
