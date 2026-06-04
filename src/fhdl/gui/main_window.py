@@ -329,16 +329,25 @@ class MainWindow(QMainWindow):
     # 테마
     # ------------------------------------------------------------------
 
+    # 외부 QSS 로드 실패 시 사용할 최소 인라인 폴백 테마
+    _FALLBACK_QSS = """
+        QMainWindow { background:#1E1E1E; color:#D4D4D4; }
+        QMenuBar { background:#252526; color:#CCC; }
+        QMenuBar::item:selected { background:#094771; }
+        QMenu { background:#252526; color:#CCC; border:1px solid #444; }
+        QMenu::item:selected { background:#094771; }
+        QSplitter::handle { background:#333; }
+        QStatusBar { background:#007ACC; color:#FFF; }
+        QLabel { color:#CCC; }
+        QProgressBar { background:#333; border:none; height:8px; }
+        QProgressBar::chunk { background:#007ACC; }
+    """
+
     def _apply_dark_theme(self):
-        self.setStyleSheet("""
-            QMainWindow { background:#1E1E1E; color:#D4D4D4; }
-            QMenuBar { background:#252526; color:#CCC; }
-            QMenuBar::item:selected { background:#094771; }
-            QMenu { background:#252526; color:#CCC; border:1px solid #444; }
-            QMenu::item:selected { background:#094771; }
-            QSplitter::handle { background:#333; }
-            QStatusBar { background:#007ACC; color:#FFF; }
-            QLabel { color:#CCC; }
-            QProgressBar { background:#333; border:none; height:8px; }
-            QProgressBar::chunk { background:#007ACC; }
-        """)
+        """resources/styles/dark_theme.qss 를 로드해 전역 테마 적용 (실패 시 폴백)."""
+        # src/fhdl/gui/main_window.py → 프로젝트 루트 = parents[3]
+        qss_path = Path(__file__).resolve().parents[3] / "resources" / "styles" / "dark_theme.qss"
+        try:
+            self.setStyleSheet(qss_path.read_text(encoding="utf-8"))
+        except OSError:
+            self.setStyleSheet(self._FALLBACK_QSS)

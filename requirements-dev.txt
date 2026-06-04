@@ -1,0 +1,4 @@
+# FHDL 개발/테스트 의존성
+-r requirements.txt
+pytest>=8.0
+pytest-qt>=4.4

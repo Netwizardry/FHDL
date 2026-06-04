@@ -1,0 +1,178 @@
+/* ===========================================================================
+ * FHDL 다크 테마 (VS Code Dark+ 팔레트 기반)
+ * 진실원: 이 파일이 애플리케이션 전역 테마의 단일 정의처이다.
+ * main_window._apply_dark_theme() 가 이 파일을 로드하며, 실패 시 인라인 폴백.
+ * ===========================================================================*/
+
+/* --- 전역 --- */
+QWidget {
+    background: #1E1E1E;
+    color: #D4D4D4;
+    font-size: 12px;
+}
+
+QMainWindow {
+    background: #1E1E1E;
+    color: #D4D4D4;
+}
+
+/* --- 메뉴바 / 메뉴 --- */
+QMenuBar {
+    background: #252526;
+    color: #CCCCCC;
+}
+QMenuBar::item:selected {
+    background: #094771;
+}
+QMenu {
+    background: #252526;
+    color: #CCCCCC;
+    border: 1px solid #444444;
+}
+QMenu::item:selected {
+    background: #094771;
+}
+
+/* --- 툴바 --- */
+QToolBar {
+    background: #333333;
+    border: none;
+    spacing: 4px;
+    padding: 2px;
+}
+QToolButton {
+    background: transparent;
+    color: #D4D4D4;
+    padding: 4px 8px;
+    border-radius: 3px;
+}
+QToolButton:hover {
+    background: #094771;
+}
+QToolButton:pressed {
+    background: #007ACC;
+}
+
+/* --- 스플리터 --- */
+QSplitter::handle {
+    background: #333333;
+}
+QSplitter::handle:hover {
+    background: #007ACC;
+}
+
+/* --- 상태바 --- */
+QStatusBar {
+    background: #007ACC;
+    color: #FFFFFF;
+}
+
+/* --- 라벨 --- */
+QLabel {
+    color: #CCCCCC;
+}
+
+/* --- 진행률 --- */
+QProgressBar {
+    background: #333333;
+    border: none;
+    height: 8px;
+    text-align: center;
+    color: #FFFFFF;
+}
+QProgressBar::chunk {
+    background: #007ACC;
+}
+
+/* --- 버튼 --- */
+QPushButton {
+    background: #0E639C;
+    color: #FFFFFF;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 3px;
+}
+QPushButton:hover {
+    background: #1177BB;
+}
+QPushButton:pressed {
+    background: #094771;
+}
+QPushButton:disabled {
+    background: #3A3A3A;
+    color: #777777;
+}
+
+/* --- 입력 --- */
+QLineEdit, QPlainTextEdit, QTextEdit {
+    background: #1E1E1E;
+    color: #D4D4D4;
+    border: 1px solid #3C3C3C;
+    selection-background-color: #264F78;
+}
+
+/* --- 리스트 / 트리 / 테이블 --- */
+QListView, QTreeWidget, QTreeView, QTableWidget, QTableView {
+    background: #252526;
+    color: #CCCCCC;
+    border: 1px solid #3C3C3C;
+    alternate-background-color: #2A2A2B;
+    selection-background-color: #094771;
+    selection-color: #FFFFFF;
+}
+QHeaderView::section {
+    background: #333333;
+    color: #CCCCCC;
+    border: none;
+    padding: 4px;
+}
+
+/* --- 탭 --- */
+QTabWidget::pane {
+    border: 1px solid #3C3C3C;
+}
+QTabBar::tab {
+    background: #2D2D2D;
+    color: #AAAAAA;
+    padding: 6px 12px;
+    border: none;
+}
+QTabBar::tab:selected {
+    background: #1E1E1E;
+    color: #FFFFFF;
+    border-bottom: 2px solid #007ACC;
+}
+
+/* --- 스크롤바 --- */
+QScrollBar:vertical {
+    background: #1E1E1E;
+    width: 12px;
+    margin: 0;
+}
+QScrollBar::handle:vertical {
+    background: #424242;
+    min-height: 20px;
+    border-radius: 6px;
+}
+QScrollBar::handle:vertical:hover {
+    background: #5A5A5A;
+}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    height: 0;
+}
+QScrollBar:horizontal {
+    background: #1E1E1E;
+    height: 12px;
+    margin: 0;
+}
+QScrollBar::handle:horizontal {
+    background: #424242;
+    min-width: 20px;
+    border-radius: 6px;
+}
+QScrollBar::handle:horizontal:hover {
+    background: #5A5A5A;
+}
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+    width: 0;
+}

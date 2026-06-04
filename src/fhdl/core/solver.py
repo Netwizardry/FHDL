@@ -9,6 +9,8 @@ from __future__ import annotations
 import math
 from typing import Callable, Dict, List, Optional, Set, Tuple
 
+import networkx as nx
+
 from .models import (
     AnalysisResult, ConstraintConfig, DiagnosticItem, EntityMap,
     FluidConfig, NodeCalcResult, PipeCalcResult, PipeEntity,
@@ -111,21 +113,29 @@ class HydraulicSolver:
                       "최소 1개의 tank 또는 pump를 정의하세요.")
             return [], [], SystemSummary()
 
+        # 토폴로지 무결성 검사 (NET001/003/004/005)
+        self._validate_network(adj, sources)
+
         terminals = list(self.em.terminals)
         if not terminals:
-            self._warn("NET001", "말단 장치(terminal)가 없습니다.", SourceSpan())
+            self._warn("WRN002",
+                       "말단 장치(terminal)가 정의되지 않아 요구 유량이 0입니다.",
+                       SourceSpan(),
+                       "최소 1개의 terminal을 정의해 요구 유량을 지정하세요.")
 
         # Pass 1: 유량 역산
-        q_map = self._pass1_flow_synthesis(adj, rev_adj, sources, terminals)
+        #   node_demand: 노드별 누적 요구유량 (소스 방향)
+        #   pipe_q:      배관별 통과 유량 (파이프 ID 기준)
+        node_demand, pipe_q = self._pass1_flow_synthesis(adj, rev_adj, sources, terminals)
 
-        # Pass 2: 수압 평형 (Newton-Raphson)
-        head_map = self._pass2_hydraulic_balance(adj, q_map, sources)
+        # Pass 2: 수압 평형 (Newton-Raphson) — 배관 유량 기준 마찰손실 반영
+        head_map = self._pass2_hydraulic_balance(adj, pipe_q, sources)
 
         # 결과 수집
-        node_results, pipe_results = self._collect_results(q_map, head_map)
+        node_results, pipe_results = self._collect_results(node_demand, pipe_q, head_map)
 
         # 사양 산정
-        summary = self._compute_summary(node_results, pipe_results, head_map, q_map, sources)
+        summary = self._compute_summary(node_results, pipe_results, head_map, node_demand, sources)
 
         return node_results, pipe_results, summary
 
@@ -188,6 +198,78 @@ class HydraulicSolver:
             return entity.elevation
         return 0.0
 
+    def _node_span(self, nid: str) -> SourceSpan:
+        ent = self.em.get_node_entity(nid)
+        return getattr(ent, "span", None) or SourceSpan()
+
+    # ------------------------------------------------------------------
+    # 토폴로지 무결성 검사 (NET001/003/004/005)
+    # ------------------------------------------------------------------
+
+    def _validate_network(self, adj: Dict[str, List[str]], sources: List[str]) -> None:
+        """공급원 기준 도달성·고립·순환 루프를 검사하여 NET 진단을 생성한다.
+
+        - NET001: 고립 노드 (진입/진출 차수 모두 0)
+        - NET003: 공급원에서 도달 불가
+        - NET004: 복합 루프(단순 병렬 외 순환) 경고
+        - NET005: 공급원 없는 순환 루프(Dead Loop) 에러
+        """
+        node_ids = self.em.all_node_ids()
+        if not node_ids:
+            return
+
+        g = nx.DiGraph()
+        g.add_nodes_from(node_ids)
+        for s, dests in adj.items():
+            if s not in g:
+                continue
+            for d in dests:
+                if d in g:
+                    g.add_edge(s, d)
+
+        source_set = set(sources)
+
+        # 공급원에서 순방향 도달 가능 집합
+        reachable: Set[str] = set(source_set)
+        for src in source_set:
+            if src in g:
+                reachable |= nx.descendants(g, src)
+
+        for nid in node_ids:
+            isolated = g.in_degree(nid) == 0 and g.out_degree(nid) == 0
+            if isolated:
+                # NET001: 고립 노드
+                self._err("NET001",
+                          f"노드 '{nid}'가 어떤 배관과도 연결되어 있지 않습니다.",
+                          self._node_span(nid),
+                          "해당 노드를 배관(pipe)으로 연결하거나 정의를 제거하세요.")
+            elif nid not in source_set and nid not in reachable:
+                # NET003: 도달 불가 (고립·공급원 제외)
+                self._err("NET003",
+                          f"노드 '{nid}'가 어떤 공급원에서도 도달할 수 없습니다.",
+                          self._node_span(nid),
+                          "공급원(tank/pump)에서 해당 노드까지 경로를 연결하세요.")
+
+        # 순환 루프 탐지: SCC 크기>1 또는 자기 루프
+        for scc in nx.strongly_connected_components(g):
+            is_cycle = len(scc) > 1 or any(g.has_edge(n, n) for n in scc)
+            if not is_cycle:
+                continue
+            members = ", ".join(sorted(scc))
+            if any(n in reachable for n in scc):
+                # NET004: 공급원과 연결된 복합 루프 → 경고
+                self._warn("NET004",
+                           f"복합 루프(단순 병렬 외 순환)가 감지되었습니다: {{{members}}}. "
+                           f"v0.1은 트리/단순 병렬만 지원합니다.",
+                           SourceSpan(),
+                           "루프를 단순 트리형으로 수정하거나 v0.2 업그레이드를 대기하세요.")
+            else:
+                # NET005: 공급원 없는 순환 루프 → 에러
+                self._err("NET005",
+                          f"공급원 없는 순환 루프(Dead Loop)가 발견되었습니다: {{{members}}}.",
+                          SourceSpan(),
+                          "루프를 끊거나 외부 공급원(tank/pump)과 연결하세요.")
+
     # ------------------------------------------------------------------
     # Pass 1: 유량 역산
     # ------------------------------------------------------------------
@@ -196,8 +278,13 @@ class HydraulicSolver:
         self,
         adj: Dict, rev_adj: Dict,
         sources: List[str], terminals: List[str],
-    ) -> Dict[str, float]:
-        """말단 요구유량을 역방향으로 집계하여 각 배관 q_design (m³/s) 결정"""
+    ) -> Tuple[Dict[str, float], Dict[str, float]]:
+        """말단 요구유량을 역방향으로 집계하여 각 배관 q_design (m³/s) 결정.
+
+        반환: (node_demand, pipe_q)
+          - node_demand: 노드 ID → 누적 요구유량
+          - pipe_q:      파이프 ID → 통과 유량
+        """
         # 각 노드의 누적 유량 (소스 방향으로)
         demand: Dict[str, float] = {}
 
@@ -220,12 +307,19 @@ class HydraulicSolver:
                     visited.add(up)
                     queue.append(up)
 
-        # 배관별 유량 결정 (start_node demand 기반)
+        # 배관별 유량 결정 (말단=end_node demand 기반)
+        #   배관 (a→b)의 통과 유량 = b 하류 누적 요구유량을, b로 들어오는
+        #   배관 수로 균등 분배 (트리: 1개, 단순 병렬: n개)
+        in_pipe_count: Dict[str, int] = {}
+        for p in self.em.pipes.values():
+            in_pipe_count[p.end_id] = in_pipe_count.get(p.end_id, 0) + 1
+
         pipe_q: Dict[str, float] = {}
         for pipe in self.em.pipes.values():
-            pipe_q[pipe.entity_id] = demand.get(pipe.start_id, 0.0)
+            share = max(in_pipe_count.get(pipe.end_id, 1), 1)
+            pipe_q[pipe.entity_id] = demand.get(pipe.end_id, 0.0) / share
 
-        # 배관 관경 자동 선정
+        # 배관 관경 자동 선정 (배관별 실제 통과 유량 기준)
         for pipe in self.em.pipes.values():
             if pipe.diameter.mode == "AUTO":
                 q = pipe_q.get(pipe.entity_id, 0.0)
@@ -237,7 +331,7 @@ class HydraulicSolver:
                     pipe.diameter.value = _KS_DIAMETERS_M[2]  # 기본 최소값
                     pipe.diameter.mode = "AUTO"
 
-        return demand
+        return demand, pipe_q
 
     def _select_diameter(self, q: float) -> float:
         """유속 제약(v_max)을 만족하는 최소 표준 관경 선정"""
@@ -260,10 +354,10 @@ class HydraulicSolver:
 
     def _pass2_hydraulic_balance(
         self,
-        adj: Dict, q_map: Dict[str, float],
+        adj: Dict, pipe_q: Dict[str, float],
         sources: List[str],
     ) -> Dict[str, float]:
-        """노드별 수두 H (m) 계산"""
+        """노드별 수두 H (m) 계산 (배관 통과 유량 pipe_q 기준 마찰손실 반영)"""
         all_ids = self.em.all_node_ids()
 
         # 초기 수두: 탱크는 고도+수위, 나머지는 고도
@@ -302,7 +396,7 @@ class HydraulicSolver:
                     if pipe is None:
                         continue
 
-                    q = q_map.get(pipe.entity_id, 0.0)
+                    q = pipe_q.get(pipe.entity_id, 0.0)
                     d = pipe.diameter.value
                     L = pipe.length
                     if L <= 0:
@@ -356,6 +450,7 @@ class HydraulicSolver:
     def _collect_results(
         self,
         demand: Dict[str, float],
+        pipe_q: Dict[str, float],
         head: Dict[str, float],
     ) -> Tuple[List[NodeCalcResult], List[PipeCalcResult]]:
         node_results = []
@@ -391,7 +486,7 @@ class HydraulicSolver:
 
         # 배관 결과
         for pipe in self.em.pipes.values():
-            q = demand.get(pipe.entity_id, demand.get(pipe.start_id, 0.0))
+            q = pipe_q.get(pipe.entity_id, 0.0)
             d = pipe.diameter.value
             L = pipe.length
             if L <= 0:
@@ -472,17 +567,39 @@ class HydraulicSolver:
             if h > source_head:
                 source_head = h
 
-        max_req_head = 0.0
-        for tid, term in self.em.terminals.items():
-            t_head = head.get(tid, term.elevation)
-            req_head = (term.elevation + term.required_p / (self._rho * G)) - source_head
-            if req_head > max_req_head:
-                max_req_head = req_head
-                summary.worst_path = [sources[0] if sources else "", tid]
+        # 배관 손실 / 상류 배관 조회 맵 (트리 가정: 노드당 진입 배관 1개)
+        loss_by_pipe = {pr.pipe_id: abs(pr.h_loss_total) for pr in pipe_results}
+        incoming_pipe: Dict[str, PipeEntity] = {}
+        for p in self.em.pipes.values():
+            incoming_pipe.setdefault(p.end_id, p)
 
-        # 최불리 경로 손실 합산
-        path_loss = sum(abs(pr.h_loss_total) for pr in pipe_results)
-        summary.required_head = max(max_req_head + path_loss, 0.0)
+        def _upstream_path(node_id: str) -> List[str]:
+            """말단 → 소스 방향 경로(소스가 앞으로 오도록 정렬)"""
+            path: List[str] = []
+            seen: Set[str] = set()
+            cur: Optional[str] = node_id
+            while cur is not None and cur not in seen:
+                path.append(cur)
+                seen.add(cur)
+                p = incoming_pipe.get(cur)
+                cur = p.start_id if p else None
+            return list(reversed(path))
+
+        # 각 말단별: 정적 요구수두 + 경로 마찰손실 합이 최대인 경로 = 최불리 경로
+        max_total_head = 0.0
+        for tid, term in self.em.terminals.items():
+            path = _upstream_path(tid)
+            path_loss = sum(
+                loss_by_pipe.get(incoming_pipe[n].entity_id, 0.0)
+                for n in path if n in incoming_pipe
+            )
+            req_static = term.elevation + term.required_p / (self._rho * G)
+            total_head = (req_static - source_head) + path_loss
+            if total_head > max_total_head:
+                max_total_head = total_head
+                summary.worst_path = path
+
+        summary.required_head = max(max_total_head, 0.0)
 
         sf = self.em.constraints.safety_factor_head
         summary.recommended_pump_flow = total_q

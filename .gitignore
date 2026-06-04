@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+.venv/
+venv/
+
+# 도구
+.serena/
+
+# 프로젝트 런타임 산출물
+projects/*/state.db
+projects/*/outputs/

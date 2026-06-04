@@ -2,7 +2,40 @@
 
 **기준 문서:** PROGRAM_DESIGN.md + docs/spec (v4.0)  
 **작성일:** 2026-05-27  
-**상태:** 구현 진행 중
+**최종 검수:** 2026-06-04  
+**상태:** MVP(v0.2) 구현 완료 · 일부 항목 v0.2+ 이월
+
+---
+
+## 검수 현황 (2026-06-04) — 아래 체크박스보다 본 섹션이 우선
+
+> 코드를 직접 실행해 확인한 결과. 본 요약이 단일 진실원이다.
+
+| Phase | 상태 | 비고 |
+| :--- | :--- | :--- |
+| 1. 기반 환경 | ✅ 완료 | main.py, pyproject.toml, requirements*.txt, data/library.db, dark_theme.qss 모두 존재·동작 |
+| 2. 핵심 엔진 (core) | ✅ 완료 | parser/semantic/solver/pipeline/report 구현. **NET001~005 전수 구현**(solver `_validate_network`, networkx 기반). network_builder는 solver에 통합 |
+| 3. DB 레이어 | ✅ 완료 | project_db(WAL·journal DIRTY/CLEAN), library_db CRUD |
+| 4. GUI (5패널) | ✅ 완료 | main_window FSM + 5패널 + worker, 외부 QSS 다크 테마 적용 |
+| 5. 테스트 | 🔶 부분 | pytest **29개 통과**(파서/DB/솔버/유량 회귀 + 네트워크 진단·다중 토폴로지 10건). Phase 5의 13개 명명 시나리오는 일부만 충족 |
+| 6. 통합·마무리 | 🔶 부분 | README·데모·테마 완료. 아이콘 리소스·일부 명명 테스트 미완 |
+
+### 2026-06-04 세션 수정 사항
+- 🐛 **solver 유량 분배 버그 수정**: 분기 배관이 분기점 전체 유량을 받던 문제 → 말단(end_id) 기준 분배로 정정 (`trunk=140, branch=80/60 lpm` 검증)
+- 🐛 **Pass 2 마찰손실 미반영 수정**: 노드 맵에서 파이프 ID로 유량을 조회해 항상 0이던 문제 → `pipe_q` 맵 일관 전달
+- 🐛 **최불리 경로 손실 과대계산 수정**: 전체 배관 손실 합산 → 실제 worst path만 합산
+- ➕ 회귀 테스트 2건 추가(`test_branch_flow_split`, `test_friction_reflected_in_head`)
+- ➕ `README.md`, `requirements.txt`, `requirements-dev.txt`, `resources/styles/dark_theme.qss` 신규
+
+### 2026-06-04 (2차) 네트워크 진단 구현
+- ➕ **NET001(고립)·NET003(도달 불가)·NET004(복합 루프 경고)·NET005(Dead Loop)** 전수 구현 (solver `_validate_network`, networkx SCC/도달성 기반)
+- 🔧 NET001 오용(말단 없음 → NET001) 수정: 말단 없음은 WRN002로 재분류, NET001은 고립 노드 전용
+- ➕ 테스트 `tests/test_network.py` 10건: NET 진단 4종 + 다중 분기·다중 급수·다중 출력·고도 변경
+
+### v0.2+ 이월 항목
+- Phase 5 명명 테스트 전수(T-OPS-002 저널 복구, T-NFR-004 1000노드 성능 등)
+- GUI 아이콘 리소스 세트
+- 토폴로지 뷰어 NET003~005 엣지/노드 색상 구분 렌더링
 
 ---
 

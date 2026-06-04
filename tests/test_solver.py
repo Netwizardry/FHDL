@@ -163,3 +163,68 @@ def test_velocity_check():
     warn_codes = [d.code for d in r.diagnostics]
     # 15mm에 60lpm → 유속 매우 높음 → WRN001
     assert "WRN001" in warn_codes
+
+
+_BRANCH_FHD = """
+system main {
+    unit_system = METRIC;
+    fluid = water;
+    temp = 20;
+    friction_model = DW;
+}
+
+tank src {
+    elevation = 10m;
+}
+
+junction j1 {
+    elevation = 5m;
+}
+
+terminal ta {
+    elevation = 3m;
+    required_q = 80lpm;
+}
+
+terminal tb {
+    elevation = 2m;
+    required_q = 60lpm;
+}
+
+pipe trunk { start = src; end = j1; length = 30m; diameter = 50mm; material = Steel; }
+pipe ba { start = j1; end = ta; length = 20m; diameter = 50mm; material = Steel; }
+pipe bb { start = j1; end = tb; length = 20m; diameter = 50mm; material = Steel; }
+
+connect src -> j1;
+connect j1 -> ta;
+connect j1 -> tb;
+"""
+
+
+def test_branch_flow_split():
+    """분기점 하류 배관은 각자의 말단 유량만 분담해야 한다 (유량 분배 회귀 테스트).
+
+    과거 버그: 분기 배관이 모두 분기점의 전체 유량(140lpm)을 받았음.
+    기대값: trunk=140, ba=80, bb=60 lpm.
+    """
+    r = AnalysisPipeline().run(_BRANCH_FHD)
+    assert r.status != "FAILED"
+    q = {pr.pipe_id: pr.flow * 60000.0 for pr in r.pipe_results}  # m³/s → lpm
+    assert abs(q["trunk"] - 140.0) < 1e-6
+    assert abs(q["ba"] - 80.0) < 1e-6
+    assert abs(q["bb"] - 60.0) < 1e-6
+    # 분기 합 = 간선 (질량 보존)
+    assert abs((q["ba"] + q["bb"]) - q["trunk"]) < 1e-6
+
+
+def test_friction_reflected_in_head():
+    """Pass2가 배관 유량 기준 마찰손실을 노드 수두에 반영해야 한다.
+
+    과거 버그: Pass2가 노드 맵에서 파이프 ID로 유량을 조회해 항상 0 →
+    마찰손실 미반영(모든 노드 수두 동일).
+    """
+    r = AnalysisPipeline().run(_BRANCH_FHD)
+    heads = {nr.node_id: nr.head_total for nr in r.node_results}
+    # 소스보다 하류 말단 수두가 마찰손실만큼 낮아야 한다
+    assert heads["ta"] < heads["src"] - 0.1
+    assert heads["j1"] < heads["src"]

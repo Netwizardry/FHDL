@@ -1,0 +1,7 @@
+# FHDL 런타임 의존성
+# 단일 진실원은 pyproject.toml 이며, 이 파일은 pip 편의용 미러본이다.
+PySide6>=6.6
+networkx>=3.2
+numpy>=1.26
+
+# 개발/테스트 (선택): pip install -r requirements-dev.txt
