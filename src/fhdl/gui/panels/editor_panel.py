@@ -321,18 +321,9 @@ th{background:#333;color:#4EC9B0;text-align:left}
 # ---------------------------------------------------------------------------
 
 # 배관 자재 목록: (DSL 키워드, 표시 레이블)
-_MATERIALS = [
-    ("Steel",       "강관 (탄소강)"),
-    ("Cast_Iron",   "주철관"),
-    ("PVC",         "PVC 경질관"),
-    ("PE",          "폴리에틸렌 (PE)"),
-    ("HDPE",        "고밀도 PE (HDPE)"),
-    ("SUS304",      "스테인리스 304"),
-    ("SUS316",      "스테인리스 316"),
-    ("Copper",      "구리관"),
-    ("Double_Wall", "이중벽관"),
-    ("Perforated",  "유공관"),
-]
+# 재질 목록은 core.materials 단일 진실원을 참조한다.
+from ...core.materials import list_materials as _list_materials
+_MATERIALS = _list_materials()
 
 # 피팅류 카테고리 목록: (카테고리명, [(DSL 키워드, 표시 레이블), ...])
 _FITTING_CATEGORIES = [
@@ -378,7 +369,9 @@ _FITTING_CATEGORIES = [
     ]),
 ]
 
-_TYPES = ["tank", "pump", "terminal", "junction", "pipe"]
+# 노드/배관 타입은 core.language 단일 진실원을 참조한다.
+from ...core.language import COMPONENT_TYPES as _COMPONENT_TYPES
+_TYPES = list(_COMPONENT_TYPES)
 
 _S_EDIT = ("QLineEdit { background:#252526; color:#D4D4D4; border:1px solid #444;"
            " padding:2px 4px; border-radius:2px; }")

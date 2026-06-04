@@ -103,6 +103,16 @@
   로그 토글 Ctrl+`, 로그 지우기 Ctrl+L. 보기(&V) 메뉴 신설.
 - 테스트 +3 (로그 레벨/지우기/HTML escape). 총 87개 통과.
 
+### 2026-06-04 (10차) GUI ↔ 언어/엔진 정의 단일 진실원화
+- **재질 물성 연동**(결함 수정): 기존엔 재질을 골라도 조도/C값이 Steel 고정이었음.
+  core/materials.py 신설(재질 id→물성+별칭), semantic 이 재질→물성 자동 적용
+  (명시 roughness/c_factor 가 우선, 별칭 CI/STS 정규화, 미지원 재질 SEM004 경고).
+- **단일 진실원화**:
+  · 재질: core/materials → library_db 시드 + GUI 드롭다운 + semantic 공유.
+  · 키워드/노드타입: core/language.py → parser·highlighter·GUI 다이얼로그 공유.
+  · 부속: 기존 core/fittings 공유 유지(GUI 키 전부 정합 확인).
+- 테스트 +6. 총 93개 통과.
+
 ### v0.2+ 이월 항목
 - Phase 5 명명 테스트 전수(T-OPS-002 저널 복구, T-NFR-004 1000노드 성능 등)
 - GUI 아이콘 리소스 세트

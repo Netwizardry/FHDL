@@ -27,12 +27,12 @@ class FHDLHighlighter(QSyntaxHighlighter):
         self._build_rules()
 
     def _build_rules(self):
+        # 키워드 정의는 core.language 단일 진실원을 참조한다.
+        from ..core.language import BLOCK_KEYWORDS, ATTR_KEYWORDS
+
         # 블록 타입 키워드
         kw_fmt = _fmt("#569CD6", bold=True)
-        for kw in (
-            "system", "tank", "pump", "pipe", "junction", "terminal",
-            "connect", "constraint",
-        ):
+        for kw in BLOCK_KEYWORDS:
             self._rules.append((
                 QRegularExpression(rf"\b{kw}\b", QRegularExpression.PatternOption.CaseInsensitiveOption),
                 kw_fmt,
@@ -40,16 +40,7 @@ class FHDLHighlighter(QSyntaxHighlighter):
 
         # 속성 키워드
         attr_fmt = _fmt("#9CDCFE")
-        for attr in (
-            "z", "elevation", "flow", "head", "length", "diameter", "material",
-            "required_q", "required_p", "k_factor", "c_factor", "fittings",
-            "roughness", "temp", "altitude", "unit_system",
-            "friction_model", "velocity_min", "velocity_max",
-            "safety_factor_head", "safety_factor_npsh",
-            "volume", "level_max", "efficiency", "npshr",
-            "pump_type", "min_level", "submerge_ref",
-            "start", "end", "x", "y",
-        ):
+        for attr in ATTR_KEYWORDS:
             self._rules.append((
                 QRegularExpression(rf"\b{attr}\b"),
                 attr_fmt,

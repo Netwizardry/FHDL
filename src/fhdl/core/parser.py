@@ -9,6 +9,7 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
+from .language import NODE_TYPES
 from .models import (
     ASTNode, ComponentASTNode, ConnectASTNode, ConstraintASTNode,
     DiagnosticItem, SourceSpan, SystemASTNode,
@@ -82,7 +83,7 @@ class FHDLParser:
             self._ast.append(node)
 
         # tank/pump/junction/terminal id { ... }
-        for comp_type in ("tank", "pump", "junction", "terminal"):
+        for comp_type in NODE_TYPES:
             for m in re.finditer(
                 rf'\b({comp_type})\s+(\w+)\s*\{{([^}}]*)\}}',
                 clean, re.IGNORECASE | re.DOTALL

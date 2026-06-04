@@ -74,13 +74,10 @@ _KS_SIZES = [
     ("250A", 0.20270), ("300A", 0.25270),
 ]
 
-_MATERIALS = [
-    ("Steel",  "Steel (Carbon)",   0.000045, 120, 2_000_000, 1200),
-    ("STS",    "Stainless Steel",  0.000015, 140, 2_500_000, 1350),
-    ("PVC",    "PVC",              0.0000015,150, 1_000_000,  400),
-    ("HDPE",   "HDPE",             0.000007, 145, 1_600_000,  350),
-    ("CI",     "Cast Iron",        0.00026,  100, 1_800_000, 1100),
-]
+# 재질 물성 단일 진실원은 core.materials.MATERIALS 이다 (중복 정의 방지).
+from ..core.materials import seed_rows as _material_seed_rows
+
+_MATERIALS = _material_seed_rows()
 
 # 부속 K-factor 단일 진실원은 core.fittings.FITTINGS 이다.
 # 라이브러리 DB 는 이를 시드 데이터로 재사용한다 (중복 정의 방지).
@@ -160,8 +157,10 @@ class LibraryDB:
         return [(r["nominal_size"], r["inner_diameter"]) for r in rows]
 
     def get_material(self, material_id: str) -> Optional[Dict]:
+        from ..core.materials import canonical
+        key = canonical(material_id) or material_id
         row = self._conn.execute(
-            "SELECT * FROM pipe_materials WHERE material_id=?", (material_id,)
+            "SELECT * FROM pipe_materials WHERE material_id=?", (key,)
         ).fetchone()
         return dict(row) if row else None
 

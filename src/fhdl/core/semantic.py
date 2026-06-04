@@ -10,6 +10,7 @@ import math
 from typing import Any, Dict, List, Optional, Tuple
 
 from .fittings import sum_fittings_k
+from .materials import material_properties
 from .models import (
     ASTNode, ComponentASTNode, ConnectASTNode, ConstraintASTNode,
     ConstraintConfig, DiagnosticItem, EntityMap, FluidConfig,
@@ -223,9 +224,18 @@ class SemanticAnalyzer:
             dia_raw = a.get("diameter", "auto")
             dia_state = self._sizing(dia_raw, "m")
 
+            # 재질 → 물성 자동 적용 (라이브러리 정본). 명시적 roughness/c_factor 가 우선.
             mat = str(a.get("material", "Steel"))
-            roughness = self._as_si(a.get("roughness", (0.045, "mm")))
-            c_factor = self._as_float(a.get("c_factor", 120.0), "")
+            props = material_properties(mat)
+            mat = props["material_id"] if props else mat   # 정본 id 로 정규화
+            def_rough = props["roughness_m"] if props else 0.045e-3
+            def_c = props["c_factor_hw"] if props else 120.0
+            roughness = self._as_si(a["roughness"]) if "roughness" in a else def_rough
+            c_factor = self._as_float(a["c_factor"], "") if "c_factor" in a else def_c
+            if not props and mat != "Steel":
+                self._warn("SEM004",
+                           f"배관 '{cid}'의 재질 '{mat}'이 라이브러리에 없어 기본(Steel) 물성을 사용합니다.",
+                           span, "지원 재질을 사용하거나 roughness/c_factor 를 직접 지정하세요.")
 
             # 국부손실 K = 직접 지정(k_factor) + 명명 부속(fittings) 라이브러리 합산
             manual_k = self._as_float(a.get("k_factor", 0.0), "")
