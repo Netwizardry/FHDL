@@ -140,6 +140,20 @@ def _find_pipe_block(source: str, pipe_id: str) -> Optional[re.Match]:
     return pattern.search(source)
 
 
+def set_pipe_attributes(source: str, pipe_id: str, attrs: Dict[str, str]) -> str:
+    """pipe 블록의 속성을 교체(없으면 추가)한다 (length/diameter/material/k_factor 등)."""
+    m = _find_pipe_block(source, pipe_id)
+    if not m:
+        return source
+    head, body, tail = m.group(1), m.group(2), m.group(3)
+    indent = _detect_indent(body)
+    for key, value in attrs.items():
+        if value is None or value == "":
+            continue
+        body = _set_attr_in_body(body, key, str(value), indent)
+    return source[:m.start()] + head + body + tail + source[m.end(3):]
+
+
 def remove_pipe(source: str, pipe_id: str) -> str:
     m = _find_pipe_block(source, pipe_id)
     if not m:

@@ -195,6 +195,7 @@ class MainWindow(QMainWindow):
         self._diag_panel.diagnostic_selected.connect(self._on_diagnostic_selected)
         # 토폴로지 그래프 편집 → DSL 역반영 (Inverse Sync)
         self._viewer_panel.node_double_clicked.connect(self._on_node_edit)
+        self._viewer_panel.pipe_double_clicked.connect(self._on_pipe_edit)
         self._viewer_panel.connection_requested.connect(self._on_connection_requested)
 
     # ------------------------------------------------------------------
@@ -269,9 +270,24 @@ class MainWindow(QMainWindow):
             else:
                 f.append(("required_p", "요구압력", ""))
         elif ntype == "pump":
+            head_v = f"{ent.head.value:g}m" if ent.head.mode == "MANUAL" else ""
+            flow_v = f"{ent.flow.value * 60000:g}lpm" if ent.flow.mode == "MANUAL" else ""
+            f.append(("head", "양정(head)", head_v))
+            f.append(("flow", "유량(flow)", flow_v))
             f.append(("npshr", "NPSHr", f"{ent.npshr:g}m"))
             f.append(("efficiency", "효율", f"{ent.efficiency:g}"))
         return f
+
+    def _pipe_fields(self, pipe):
+        """배관 현재값 → 편집 다이얼로그 필드."""
+        dia = "auto" if pipe.diameter.mode == "AUTO" else f"{pipe.diameter.value * 1000:g}mm"
+        return [
+            ("length", "길이", f"{pipe.length:g}m"),
+            ("diameter", "관경(auto 가능)", dia),
+            ("material", "자재", pipe.material),
+            ("k_factor", "수동 K", f"{pipe.manual_k:g}"),
+            ("fittings", "피팅 [name*N]", ""),
+        ]
 
     def _on_node_edit(self, node_id: str):
         em = self._entity_map
@@ -289,6 +305,22 @@ class MainWindow(QMainWindow):
             return
         new_src = set_node_attributes(
             self._editor_panel.get_source(), node_id, dlg.get_values())
+        self._editor_panel.set_source(new_src)
+        self._run_analysis()
+
+    def _on_pipe_edit(self, pipe_id: str):
+        em = self._entity_map
+        if not em or pipe_id not in em.pipes:
+            return
+        from .panels.editor_panel import NodeEditDialog
+        from ..core.dsl_editor import set_pipe_attributes
+
+        pipe = em.pipes[pipe_id]
+        dlg = NodeEditDialog(pipe_id, "pipe", self._pipe_fields(pipe), self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        new_src = set_pipe_attributes(
+            self._editor_panel.get_source(), pipe_id, dlg.get_values())
         self._editor_panel.set_source(new_src)
         self._run_analysis()
 

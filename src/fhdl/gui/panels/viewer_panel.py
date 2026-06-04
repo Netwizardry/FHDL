@@ -147,6 +147,7 @@ class EdgeItem(QGraphicsLineItem):
 class TopologyViewer(QWidget):
     entity_selected = Signal(str)            # 노드 선택
     node_double_clicked = Signal(str)        # 노드 더블클릭 → 속성 편집
+    pipe_double_clicked = Signal(str)        # 배관 더블클릭 → 속성 편집
     connection_requested = Signal(str, str)  # 노드 드래그 연결 (from, to)
 
     def __init__(self, parent=None):
@@ -163,6 +164,7 @@ class TopologyViewer(QWidget):
         self._scene.selectionChanged.connect(self._on_selection)
         # 뷰의 마우스 제스처 → 시그널
         self._view.on_node_double = self.node_double_clicked.emit
+        self._view.on_pipe_double = self.pipe_double_clicked.emit
         self._view.on_connect = self.connection_requested.emit
 
     # -- 공개 API -------------------------------------------------------
@@ -358,6 +360,7 @@ class _ZoomableView(QGraphicsView):
 
         # 콜백 (TopologyViewer 가 시그널 emit 에 연결)
         self.on_node_double = None   # callable(node_id)
+        self.on_pipe_double = None   # callable(pipe_id)
         self.on_connect = None       # callable(from_id, to_id)
         self._conn_start: Optional[NodeItem] = None
         self._temp_line = None
@@ -374,10 +377,21 @@ class _ZoomableView(QGraphicsView):
             item = item.parentItem()
         return None
 
+    def _edge_at(self, pos) -> Optional[EdgeItem]:
+        for item in self.items(pos):
+            if isinstance(item, EdgeItem):
+                return item
+        return None
+
     def mouseDoubleClickEvent(self, event):
-        node = self._node_at(event.position().toPoint())
+        pt = event.position().toPoint()
+        node = self._node_at(pt)
         if node and callable(self.on_node_double):
             self.on_node_double(node.node_id)
+            return
+        edge = self._edge_at(pt)
+        if edge and callable(self.on_pipe_double):
+            self.on_pipe_double(edge.pipe_id)
             return
         super().mouseDoubleClickEvent(event)
 

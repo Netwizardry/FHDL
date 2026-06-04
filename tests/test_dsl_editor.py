@@ -4,7 +4,8 @@ sys.path.insert(0, "src")
 
 from fhdl.core.dsl_editor import (
     add_connection, add_link, add_pipe, has_link, remove_connection,
-    remove_link, remove_pipe, set_node_attributes, default_pipe_id,
+    remove_link, remove_pipe, set_node_attributes, set_pipe_attributes,
+    default_pipe_id,
 )
 from fhdl.core.parser import FHDLParser
 from fhdl.core.semantic import SemanticAnalyzer
@@ -103,6 +104,23 @@ def test_remove_connection():
 
 
 # --- pipe 편집 -------------------------------------------------------------
+
+def test_set_pipe_attributes():
+    out = set_pipe_attributes(_SRC, "p1", {"length": "45m", "material": "PVC"})
+    assert "length = 45m;" in out
+    assert "material = PVC;" in out
+    em = _analyze(out)
+    assert em.pipes["p1"].length == 45.0
+    # 다른 블록·연결 보존
+    assert "tank src {" in out and "connect src -> t1;" in out
+
+
+def test_set_pipe_diameter_and_fittings():
+    out = set_pipe_attributes(_SRC, "p1", {"diameter": "80mm", "fittings": "[elbow_90, valve_gate]"})
+    em = _analyze(out)
+    assert abs(em.pipes["p1"].diameter.value - 0.08) < 1e-9
+    assert em.pipes["p1"].manual_k > 0    # 피팅 K 반영
+
 
 def test_add_and_remove_pipe():
     out = add_pipe(_SRC, "p2", "src", "t1", length="5m")
