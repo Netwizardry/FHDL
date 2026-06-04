@@ -344,3 +344,21 @@ def test_datum_relative_z_guard():
         "tank res{z=5m;}\nterminal t{z=2000m;required_q=60lpm;}\n"
         "pipe p{start=res;end=t;length=20m;diameter=50mm;material=Steel;}\nconnect res->t;")
     assert "SEM005" in [d.code for d in bad.diagnostics]
+
+
+def test_suction_pipe_friction_reduces_npsha():
+    """흡입관 마찰손실이 흡입수두·NPSHa 에 반영되어야 한다."""
+    def run(suc_dia):
+        code = f"""
+system m {{ unit_system=METRIC; fluid=water; temp=20; }}
+tank res {{ z=2m; level_max=1m; }}
+pump pp {{ z=0m; head=30m; flow=300lpm; npshr=3m; }}
+terminal t {{ z=5m; required_q=300lpm; }}
+pipe suc {{ start=res; end=pp; length=10m; diameter={suc_dia}; material=Steel; }}
+pipe dis {{ start=pp; end=t; length=20m; diameter=80mm; material=Steel; }}
+connect res -> pp -> t;
+"""
+        r = AnalysisPipeline().run(code)
+        return next(n.npsha for n in r.node_results if n.node_id == "pp")
+    # 흡입관이 좁을수록(손실↑) NPSHa 가 낮아야 한다
+    assert run("80mm") > run("40mm") > run("25mm")

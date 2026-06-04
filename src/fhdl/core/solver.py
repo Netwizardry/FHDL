@@ -136,8 +136,8 @@ class HydraulicSolver:
         #   pipe_q:      배관별 통과 유량 (파이프 ID 기준)
         node_demand, pipe_q = self._pass1_flow_synthesis(adj, rev_adj, sources, terminals)
 
-        # 펌프 공급 수두(흡입수두 + 양정) 사전 계산
-        pump_init = self._pump_supply_heads(rev_adj)
+        # 펌프 공급 수두(흡입수두 − 흡입관손실 + 양정) 사전 계산
+        pump_init = self._pump_supply_heads(rev_adj, pipe_q)
 
         # Pass 2: 수압 평형 (Newton-Raphson) — 배관 유량 기준 마찰손실 반영
         head_map = self._pass2_hydraulic_balance(adj, pipe_q, sources, pump_init)
@@ -259,12 +259,23 @@ class HydraulicSolver:
     # 펌프 공급 수두 / 자동 피팅 K
     # ------------------------------------------------------------------
 
-    def _pump_supply_heads(self, rev_adj: Dict[str, List[str]]) -> Dict[str, float]:
+    def _pipe_loss(self, pipe: PipeEntity, q: float) -> float:
+        """배관의 총 손실수두(마찰 + 국부) — 흡입관 손실 등 보조 계산용."""
+        d = pipe.diameter.value
+        L = pipe.length if pipe.length > 0 else 1.0
+        if self.em.fluid.friction_model == "HW":
+            h_f, v = _hazen_williams(q, d, L, pipe.c_factor)
+        else:
+            h_f, v, _ = _darcy_weisbach(q, d, L, pipe.roughness, self._nu)
+        return h_f + _minor_loss(v, pipe.total_k)
+
+    def _pump_supply_heads(self, rev_adj: Dict[str, List[str]],
+                           pipe_q: Dict[str, float]) -> Dict[str, float]:
         """펌프별 공급 수두 = 흡입 가용수두 + 양정(manual head).
 
-        흡입측 상류에 탱크가 있으면 그 수면 수두를, 없으면 펌프 고도를 흡입수두로 본다.
-        head.mode 가 AUTO 인 펌프는 양정을 0으로 두어(사양 선정 대상) 고정수두 노드로만
-        취급하고, MANUAL 양정이 지정된 펌프는 실제 에너지원으로 네트워크에 주입한다.
+        흡입수두 = (상류 탱크 수면 수두) − (흡입관 마찰·국부손실). 상류 탱크가 없으면
+        펌프 고도를 흡입수두로 본다. head.mode 가 AUTO 인 펌프는 양정 0(사양 선정 대상),
+        MANUAL 양정 펌프는 실제 에너지원으로 주입한다.
         """
         res: Dict[str, float] = {}
         for pid, pump in self.em.pumps.items():
@@ -273,6 +284,11 @@ class HydraulicSolver:
                 if up in self.em.tanks:
                     tk = self.em.tanks[up]
                     suction = tk.elevation + tk.level_max
+                    # 흡입관(탱크→펌프) 마찰·국부손실 차감
+                    suc_pipe = self._get_pipe(up, pid)
+                    if suc_pipe is not None:
+                        q = pipe_q.get(suc_pipe.entity_id, 0.0)
+                        suction -= self._pipe_loss(suc_pipe, q)
                     break
             self._pump_suction[pid] = suction   # 흡입측 공급 수두(양정 적용 전)
             boost = pump.head.value if pump.head.mode == "MANUAL" else 0.0
