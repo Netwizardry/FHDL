@@ -142,27 +142,12 @@ class ProjectPanel(QWidget):
             return
         proj_dir = os.path.join(save_dir, name)
         os.makedirs(proj_dir, exist_ok=True)
-        # 기본 파일 생성 (해발고도 datum + 온도 반영)
+        # 신규 프로젝트 생성 — main.fhd + project.fhproj 를 일관되게 기록
+        # (저장/로드와 동일 경로·포맷 사용; 해발 datum + 온도 반영)
         fhd_path = os.path.join(proj_dir, "main.fhd")
-        config_path = os.path.join(proj_dir, "config.fhproj")
         if not os.path.exists(fhd_path):
-            Path(fhd_path).write_text(_default_fhd(altitude, temp), encoding="utf-8")
-        if not os.path.exists(config_path):
-            import json as _json
-            from datetime import datetime
-            cfg = {
-                "schema_version": "1.0.0",
-                "project_name": name,
-                "created_at": datetime.now().isoformat(),
-                "settings": {
-                    "friction_model": "DW",
-                    "unit_system": "METRIC",
-                    "fluid_type": "water",
-                    "fluid_temp": temp,
-                    "altitude": altitude,
-                },
-            }
-            Path(config_path).write_text(_json.dumps(cfg, indent=2), encoding="utf-8")
+            from ...core.project_io import save_project
+            save_project(proj_dir, _default_fhd(altitude, temp), name=name)
         self._open_path(proj_dir)
 
     def _open_project(self):

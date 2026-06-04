@@ -64,3 +64,26 @@ def test_load_missing_project():
         assert loaded.source == ""
         assert loaded.result is None
         assert loaded.cache_valid is False
+
+
+def test_project_independence():
+    """서로 다른 프로젝트는 독립적으로 저장/로드되어야 한다."""
+    import os
+    with tempfile.TemporaryDirectory() as root:
+        a = os.path.join(root, "A")
+        b = os.path.join(root, "B")
+        os.makedirs(a); os.makedirs(b)
+        srcA = _SRC
+        srcB = _SRC.replace("altitude=100m", "altitude=1200m").replace("required_q=80lpm", "required_q=150lpm")
+        rA = AnalysisPipeline().run(srcA)
+        save_project(a, srcA, rA, name="A")
+        save_project(b, srcB, None, name="B")
+        # 메타·소스 독립
+        assert read_meta(a)["project_name"] == "A"
+        assert read_meta(b)["project_name"] == "B"
+        la, lb = load_project(a), load_project(b)
+        assert la.cache_valid and la.result is not None     # A: 해석됨 → 복원
+        assert not lb.cache_valid and lb.result is None      # B: 미해석 → 캐시무효
+        assert "1200m" in lb.source and "1200m" not in la.source
+        # config.fhproj(구 포맷) 미생성
+        assert not os.path.exists(os.path.join(a, "config.fhproj"))
