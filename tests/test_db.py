@@ -93,3 +93,36 @@ def test_project_db_meta():
         db.close()
     finally:
         os.unlink(path)
+
+
+def test_project_db_persists_topology():
+    """DB가 엣지 연결성(start/end)·노드 타입·좌표를 보존해야 한다."""
+    import sqlite3
+    code = (
+        "system m { unit_system=METRIC; fluid=water; temp=20; altitude=100m; }\n"
+        "tank src { z=10m; x=0; y=0; }\n"
+        "terminal t { z=0m; x=50; y=5; required_q=80lpm; }\n"
+        "pipe p1 { start=src; end=t; length=30m; diameter=50mm; material=Steel; fittings=[elbow_90]; }\n"
+        "connect src -> t;\n"
+    )
+    r = AnalysisPipeline().run(code)
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        path = f.name
+    try:
+        db = ProjectDB(path)
+        db.save_analysis_result(r)
+        db.close()
+        c = sqlite3.connect(path)
+        c.row_factory = sqlite3.Row
+        # 엣지 연결성 저장
+        pr = c.execute("SELECT start_node, end_node, k_total FROM pipes_result WHERE pipe_id='p1'").fetchone()
+        assert pr["start_node"] == "src" and pr["end_node"] == "t"
+        assert pr["k_total"] > 0          # 피팅 K 저장
+        # 노드 타입·좌표·해발 저장
+        nr = c.execute("SELECT type, x, y, z, abs_altitude FROM nodes_result WHERE node_id='src'").fetchone()
+        assert nr["type"] == "tank"
+        assert nr["x"] == 0 and nr["z"] == 10.0
+        assert abs(nr["abs_altitude"] - 110.0) < 1e-6   # datum 100 + z 10
+        c.close()
+    finally:
+        os.unlink(path)

@@ -116,6 +116,58 @@ def test_net004_complex_loop_warning():
     assert r.status != "FAILED"  # 경고이므로 해석은 계속
 
 
+def test_net006_connect_without_pipe():
+    """배관 없는 노드-노드 connect → NET006 경고 (반쪽 엣지 방지)."""
+    code = _HEADER + """
+    tank s { z=20m; }
+    junction j { z=10m; }
+    terminal t { z=0m; required_q=100lpm; }
+    pipe p { start=s; end=j; length=10m; diameter=50mm; material=Steel; }
+    connect s -> j;
+    connect j -> t;
+    """
+    r = _run(code)
+    assert "NET006" in _codes(r)
+
+
+def test_net006_reversed_connect():
+    """connect 방향이 배관과 반대 → NET006 경고."""
+    code = _HEADER + """
+    tank s { z=20m; }
+    terminal t { z=0m; required_q=100lpm; }
+    pipe p { start=s; end=t; length=30m; diameter=50mm; material=Steel; }
+    connect t -> s;
+    """
+    r = _run(code)
+    assert "NET006" in _codes(r)
+
+
+def test_threaded_connect_infers_pipe_endpoints():
+    """connect s -> wire -> t (배관 start/end 생략) → 끝점 추론으로 동작."""
+    code = _HEADER + """
+    tank s { z=20m; }
+    terminal t { z=0m; required_q=100lpm; }
+    pipe wire { length=30m; diameter=50mm; material=Steel; }
+    connect s -> wire -> t;
+    """
+    r = _run(code)
+    assert r.status != "FAILED"
+    w = r.entity_map.pipes["wire"]
+    assert w.start_id == "s" and w.end_id == "t"
+    assert "NET006" not in _codes(r)       # 추론으로 정합
+
+
+def test_pipe_missing_endpoints_errors():
+    """connect 도 없고 start/end 도 없는 배관 → SEM003."""
+    code = _HEADER + """
+    tank s { z=20m; }
+    terminal t { z=0m; required_q=100lpm; }
+    pipe orphan { length=30m; diameter=50mm; material=Steel; }
+    """
+    r = _run(code)
+    assert "SEM003" in _codes(r)
+
+
 def test_clean_tree_no_net_diag():
     """정상 트리 구조에는 NET 진단이 없어야 한다."""
     code = _HEADER + """

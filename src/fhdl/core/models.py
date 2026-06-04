@@ -248,6 +248,8 @@ class DiagnosticItem:
 @dataclass
 class PipeCalcResult:
     pipe_id: str
+    start_id: str = ""          # 시작 노드 (엣지 연결성)
+    end_id: str = ""            # 끝 노드
     flow: float = 0.0           # m³/s
     velocity: float = 0.0       # m/s
     h_loss_f: float = 0.0       # m (마찰)
@@ -268,6 +270,10 @@ class PipeCalcResult:
 @dataclass
 class NodeCalcResult:
     node_id: str
+    node_type: str = "junction"  # tank|pump|junction|terminal
+    x: float = 0.0
+    y: float = 0.0
+    z: float = 0.0               # datum 기준 상대 고도 (입력 좌표)
     head_total: float = 0.0     # m
     p_gauge: float = 0.0        # Pa
     flow_in: float = 0.0        # m³/s

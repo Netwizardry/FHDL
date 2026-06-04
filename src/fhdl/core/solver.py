@@ -117,6 +117,8 @@ class HydraulicSolver:
 
         # 토폴로지 무결성 검사 (NET001/003/004/005)
         self._validate_network(adj, sources)
+        # connect ↔ pipe 정합성 (NET006)
+        self._check_connect_pipe_consistency()
 
         terminals = list(self.em.terminals)
         if not terminals:
@@ -156,6 +158,12 @@ class HydraulicSolver:
     # ------------------------------------------------------------------
 
     def _build_adj(self) -> Tuple[Dict, Dict]:
+        """엣지의 단일 진실원은 배관(pipe.start_id→end_id)이다.
+
+        connect 문은 토폴로지를 정의하지 않고 배관과의 정합성만 검증한다
+        (_check_connect_pipe_consistency). 배관 없는 connect 는 엣지를 만들지
+        않으므로 해당 경로는 도달불가(NET003)로 드러난다.
+        """
         adj: Dict[str, List[str]] = {}
         rev_adj: Dict[str, List[str]] = {}
 
@@ -165,6 +173,8 @@ class HydraulicSolver:
 
         for pipe in self.em.pipes.values():
             s, e = pipe.start_id, pipe.end_id
+            if not s or not e:
+                continue
             if s not in adj:
                 adj[s] = []
             if e not in rev_adj:
@@ -174,25 +184,34 @@ class HydraulicSolver:
             if s not in rev_adj[e]:
                 rev_adj[e].append(s)
 
-        # 연결(connect) 구문으로 추가된 엣지
-        # 파이프 ID는 물리적 배관이므로 노드 ID만 처리한다
-        node_ids_set = set(self.em.all_node_ids())
-        pipe_edges = {(p.start_id, p.end_id) for p in self.em.pipes.values()}
-        for from_id, to_id in self.em.connections:
-            # 양쪽 모두 노드 ID인 경우만 엣지 추가
-            if from_id not in node_ids_set or to_id not in node_ids_set:
-                continue
-            if (from_id, to_id) not in pipe_edges:
-                if from_id not in adj:
-                    adj[from_id] = []
-                if to_id not in rev_adj:
-                    rev_adj[to_id] = []
-                if to_id not in adj[from_id]:
-                    adj[from_id].append(to_id)
-                if from_id not in rev_adj[to_id]:
-                    rev_adj[to_id].append(from_id)
-
         return adj, rev_adj
+
+    def _check_connect_pipe_consistency(self) -> None:
+        """connect 문과 배관의 정합성 검사 (NET006).
+
+        엣지는 배관이 정의한다. 노드-노드 connect 인데 대응 배관이 없으면
+        (또는 방향이 반대이면) 해당 연결은 수리계산에서 무시되므로 경고한다.
+        """
+        node_ids = set(self.em.all_node_ids())
+        pipe_fwd = {(p.start_id, p.end_id) for p in self.em.pipes.values()
+                    if p.start_id and p.end_id}
+        seen: Set[Tuple[str, str]] = set()
+        for f, t in self.em.connections:
+            if f not in node_ids or t not in node_ids:
+                continue  # 배관 ID 가 끼인 연결은 끝점 추론에서 처리됨
+            if (f, t) in pipe_fwd or (f, t) in seen:
+                continue
+            seen.add((f, t))
+            if (t, f) in pipe_fwd:
+                self._warn("NET006",
+                           f"연결 '{f} -> {t}' 방향이 배관과 반대입니다. 배관 방향(start→end)을 따릅니다.",
+                           SourceSpan(),
+                           "connect 방향 또는 배관의 start/end 를 일치시키세요.")
+            else:
+                self._warn("NET006",
+                           f"연결 '{f} -> {t}'에 대응하는 배관(pipe)이 없어 수리계산에서 제외됩니다.",
+                           SourceSpan(),
+                           f"'{f}'와 '{t}'를 잇는 pipe 블록을 정의하세요.")
 
     def _get_pipe(self, from_id: str, to_id: str) -> Optional[PipeEntity]:
         for p in self.em.pipes.values():
@@ -209,6 +228,15 @@ class HydraulicSolver:
     def _node_span(self, nid: str) -> SourceSpan:
         ent = self.em.get_node_entity(nid)
         return getattr(ent, "span", None) or SourceSpan()
+
+    def _node_type(self, nid: str) -> str:
+        if nid in self.em.tanks:
+            return "tank"
+        if nid in self.em.pumps:
+            return "pump"
+        if nid in self.em.terminals:
+            return "terminal"
+        return "junction"
 
     # ------------------------------------------------------------------
     # 해발고도(datum) 기반 대기압
@@ -579,8 +607,13 @@ class HydraulicSolver:
                                pump.span,
                                "수조 수위를 높이거나 흡입관 손실을 줄이세요.")
 
+            ent = self.em.get_node_entity(nid)
             node_results.append(NodeCalcResult(
                 node_id=nid,
+                node_type=self._node_type(nid),
+                x=getattr(ent, "x", 0.0) if ent else 0.0,
+                y=getattr(ent, "y", 0.0) if ent else 0.0,
+                z=z,
                 head_total=h,
                 p_gauge=p_gauge,
                 flow_in=demand.get(nid, 0.0),
@@ -635,6 +668,8 @@ class HydraulicSolver:
 
             pipe_results.append(PipeCalcResult(
                 pipe_id=pipe.entity_id,
+                start_id=pipe.start_id,
+                end_id=pipe.end_id,
                 flow=q,
                 velocity=v,
                 h_loss_f=h_f,

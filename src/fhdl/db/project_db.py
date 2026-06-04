@@ -28,6 +28,8 @@ CREATE TABLE IF NOT EXISTS nodes_result (
     flow_req REAL DEFAULT 0,
     flow_actual REAL DEFAULT 0,
     npsha REAL DEFAULT 0,
+    abs_altitude REAL DEFAULT 0,
+    atm_pressure REAL DEFAULT 0,
     sizing_mode TEXT DEFAULT 'MANUAL',
     provenance_formula TEXT DEFAULT '',
     diagnostic_code TEXT DEFAULT '',
@@ -46,6 +48,8 @@ CREATE TABLE IF NOT EXISTS pipes_result (
     status TEXT DEFAULT 'OK',
     sizing_mode TEXT DEFAULT 'MANUAL',
     formula_id TEXT DEFAULT '',
+    k_total REAL DEFAULT 0,
+    k_auto REAL DEFAULT 0,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -108,28 +112,31 @@ class ProjectDB:
         self._set_journal_dirty()
 
         with self._conn:
-            # 노드 결과
+            # 노드 결과 (타입·좌표·해발·대기압 포함 — 토폴로지 보존)
             self._conn.execute("DELETE FROM nodes_result")
             for nr in result.node_results:
                 self._conn.execute(
                     """INSERT OR REPLACE INTO nodes_result
-                    (node_id, head_total, p_gauge, flow_req, flow_actual, npsha, sizing_mode, provenance_formula)
-                    VALUES (?,?,?,?,?,?,?,?)""",
-                    (nr.node_id, nr.head_total, nr.p_gauge,
-                     nr.flow_in, nr.flow_out, nr.npsha,
+                    (node_id, type, x, y, z, head_total, p_gauge, flow_req, flow_actual,
+                     npsha, abs_altitude, atm_pressure, sizing_mode, provenance_formula)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (nr.node_id, nr.node_type, nr.x, nr.y, nr.z,
+                     nr.head_total, nr.p_gauge, nr.flow_in, nr.flow_out,
+                     nr.npsha, nr.abs_altitude, nr.atm_pressure,
                      nr.sizing_mode, nr.provenance_formula),
                 )
 
-            # 배관 결과
+            # 배관 결과 (시작/끝 노드 — 엣지 연결성 보존)
             self._conn.execute("DELETE FROM pipes_result")
             for pr in result.pipe_results:
                 self._conn.execute(
                     """INSERT OR REPLACE INTO pipes_result
-                    (pipe_id, diameter, velocity, flow, h_loss_total, surge_index, status, sizing_mode, formula_id)
-                    VALUES (?,?,?,?,?,?,?,?,?)""",
-                    (pr.pipe_id, pr.diameter, pr.velocity, pr.flow,
+                    (pipe_id, start_node, end_node, diameter, velocity, flow, h_loss_total,
+                     surge_index, status, sizing_mode, formula_id, k_total, k_auto)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (pr.pipe_id, pr.start_id, pr.end_id, pr.diameter, pr.velocity, pr.flow,
                      pr.h_loss_total, pr.surge_index, pr.status,
-                     pr.sizing_mode, pr.formula_id),
+                     pr.sizing_mode, pr.formula_id, pr.k_total, pr.k_auto),
                 )
 
             # 시스템 요약

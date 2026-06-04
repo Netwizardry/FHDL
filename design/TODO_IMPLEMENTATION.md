@@ -60,6 +60,18 @@
   제약 조건(유속·안전율) 편집 메뉴.
 - 테스트 68개 통과.
 
+### 2026-06-04 (6차) 데이터구조·DB·엣지 연결성 정합
+- **DB 토폴로지 저장**: nodes_result(type·x·y·z·abs_altitude·atm_pressure),
+  pipes_result(start_node·end_node·k_total·k_auto) 실제 저장 → DB만으로 그래프 복원 가능.
+  (결과모델 NodeCalcResult/PipeCalcResult 에 해당 필드 추가)
+- **엣지 단일 진실원 = 배관**: _build_adj 가 pipe.start→end 만으로 엣지 구성.
+  connect 는 정합성 검증용으로 격하.
+- **NET006 (connect↔pipe 정합)**: 배관 없는 노드-노드 connect(=조용한 반쪽엣지)
+  와 역방향 connect 를 경고. 이전엔 무경고로 잘못된 압력 산출.
+- **threaded connect 추론**: `connect a -> pipe1 -> b` 에서 pipe1 의 start/end 를
+  체인 위치로 추론(_infer_pipe_endpoints). start/end·connect 모두 없으면 SEM003.
+- 테스트 73개 통과.
+
 ### v0.2+ 이월 항목
 - Phase 5 명명 테스트 전수(T-OPS-002 저널 복구, T-NFR-004 1000노드 성능 등)
 - GUI 아이콘 리소스 세트

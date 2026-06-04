@@ -75,10 +75,32 @@ class SemanticAnalyzer:
             elif isinstance(node, ConstraintASTNode):
                 em.constraints = self._build_constraints(node)
 
+        # 1.5차: connect 체인에 끼인 배관의 끝점 추론 (connect a -> pipe1 -> b)
+        self._infer_pipe_endpoints(em)
+
         # 2차: 참조 무결성 + 중복 ID
         self._check_references(em)
 
         return em, self._diags
+
+    def _infer_pipe_endpoints(self, em: EntityMap):
+        """start/end 가 비어 있는 배관을 connect 체인 위치에서 추론한다.
+
+        예: `connect A -> pipe1 -> B` 이고 pipe1 에 start/end 미지정이면
+        pipe1.start=A, pipe1.end=B 로 채운다.
+        """
+        node_ids = set(em.all_node_ids())
+        for pid, pipe in em.pipes.items():
+            if pipe.start_id and pipe.end_id:
+                continue
+            if not pipe.start_id:
+                preds = [f for (f, t) in em.connections if t == pid and f in node_ids]
+                if preds:
+                    pipe.start_id = preds[0]
+            if not pipe.end_id:
+                succs = [t for (f, t) in em.connections if f == pid and t in node_ids]
+                if succs:
+                    pipe.end_id = succs[0]
 
     # ------------------------------------------------------------------
     # 시스템 설정
@@ -187,12 +209,10 @@ class SemanticAnalyzer:
             )
 
         elif ctype == "pipe":
+            # start/end 는 생략 가능 — connect 체인에서 추론(_infer_pipe_endpoints).
+            # 추론 후에도 비어 있으면 _check_references 에서 SEM003.
             start = str(a.get("start", ""))
             end = str(a.get("end", ""))
-            if not start or not end:
-                self._err("SEM003", f"배관 '{cid}'에 start/end가 누락됩니다.", span,
-                          "start = NodeA; end = NodeB; 를 추가하세요.")
-                return
             length_raw = a.get("length", (0.0, "m"))
             length = self._as_si(length_raw)
             if length < 0:
@@ -247,8 +267,14 @@ class SemanticAnalyzer:
     def _check_references(self, em: EntityMap):
         all_node_ids = set(em.all_node_ids())
 
-        # 배관의 start/end 참조 검사
+        # 배관의 start/end 참조 검사 (추론 이후)
         for pipe in em.pipes.values():
+            if not pipe.start_id or not pipe.end_id:
+                self._err("SEM003",
+                          f"배관 '{pipe.entity_id}'에 start/end 가 누락됩니다.",
+                          pipe.span,
+                          "start = NodeA; end = NodeB; 를 추가하거나 connect 체인에 배치하세요.")
+                continue
             for ref_id, attr in [(pipe.start_id, "start"), (pipe.end_id, "end")]:
                 if ref_id and ref_id not in all_node_ids:
                     self._err("SEM002",
