@@ -395,6 +395,22 @@ def _edit(default: str = "") -> QLineEdit:
     return w
 
 
+_ICON_DIR = Path(__file__).resolve().parents[4] / "resources" / "icons"
+
+
+def node_icon(node_type: str):
+    """노드 타입별 SVG 아이콘 (없으면 빈 QIcon)."""
+    from PySide6.QtGui import QIcon
+    p = _ICON_DIR / f"{node_type}.svg"
+    return QIcon(str(p)) if p.exists() else QIcon()
+
+
+def _apply_type_icons(combo: QComboBox):
+    for i in range(combo.count()):
+        key = combo.itemData(i) or combo.itemText(i)
+        combo.setItemIcon(i, node_icon(str(key)))
+
+
 def _combo(items: list) -> QComboBox:
     w = QComboBox()
     for item in items:
@@ -446,6 +462,7 @@ class AddNodeDialog(QDialog):
         top_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         self._name_edit = _edit("node1")
         self._type_combo = _combo(_TYPES)
+        _apply_type_icons(self._type_combo)
         top_form.addRow("이름:", self._name_edit)
         top_form.addRow("타입:", self._type_combo)
         root.addLayout(top_form)

@@ -82,6 +82,9 @@ class MainWindow(QMainWindow):
 
         self.setWindowTitle("FHDL — Fluid Hardware Description Language")
         self.setMinimumSize(QSize(1200, 700))
+        _app_icon = Path(__file__).resolve().parents[3] / "resources" / "icons" / "app.svg"
+        if _app_icon.exists():
+            self.setWindowIcon(QIcon(str(_app_icon)))
         self._apply_dark_theme()
         self._build_ui()
         self._build_menu()
