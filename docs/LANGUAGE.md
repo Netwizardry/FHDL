@@ -40,6 +40,7 @@ connect A -> B -> C;           // 노드/배관 연결 (방향성)
 
 ### pump
 `z`, `flow`/`head`(MANUAL 지정 시 실제 양정 주입, 생략 시 auto=사양 선정 대상), `efficiency`, `npshr`, `x`, `y`.
+`curve_id` — 라이브러리 펌프 커브를 참조하면 통과 유량의 **운전점 양정**을 자동 적용(head보다 우선).
 수중펌프: `pump_type = submersible;`, `min_level`, `submerge_ref`.
 
 ### terminal

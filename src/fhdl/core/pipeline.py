@@ -22,11 +22,13 @@ class AnalysisPipeline:
         output_dir: Optional[str] = None,
         cancel_fn: Optional[Callable[[], bool]] = None,
         status_fn: Optional[Callable[[str], None]] = None,
+        library=None,
     ) -> AnalysisResult:
         """
         FHDL 소스 코드를 전체 분석한다.
         cancel_fn(): True이면 중단.
         status_fn(msg): 진행 상태 메시지 콜백.
+        library: LibraryDB(선택). 펌프 curve_id 의 커브 포인트를 주입한다.
         """
         result = AnalysisResult()
 
@@ -60,6 +62,15 @@ class AnalysisPipeline:
         em, sem_diags = analyzer.analyze(ast)
         result.diagnostics.extend(sem_diags)
         result.entity_map = em
+
+        # 펌프 커브 주입 (라이브러리 제공 시): curve_id → 운전점 보간용 포인트
+        if library is not None:
+            for pump in em.pumps.values():
+                if pump.curve_id and not pump.curve_points:
+                    try:
+                        pump.curve_points = library.get_pump_curve_points(pump.curve_id)
+                    except Exception:
+                        pass
 
         if any(d.is_blocking for d in sem_diags):
             result.status = "FAILED"

@@ -38,12 +38,28 @@ class AnalysisWorker(QRunnable):
             def cancel_fn() -> bool:
                 return self._cancel
 
-            result = pipeline.run(
-                source_code=self.source_code,
-                output_dir=self.output_dir,
-                cancel_fn=cancel_fn,
-                status_fn=status_cb,
-            )
+            # 펌프 커브 운전점용 라이브러리(있으면) 주입
+            library = None
+            try:
+                import os
+                from ..db.library_db import LibraryDB
+                lib_path = os.path.join(os.getcwd(), "data", "library.db")
+                if os.path.exists(lib_path):
+                    library = LibraryDB(lib_path)
+            except Exception:
+                library = None
+
+            try:
+                result = pipeline.run(
+                    source_code=self.source_code,
+                    output_dir=self.output_dir,
+                    cancel_fn=cancel_fn,
+                    status_fn=status_cb,
+                    library=library,
+                )
+            finally:
+                if library is not None:
+                    library.close()
             self.signals.finished.emit(result)
         except Exception as e:
             self.signals.error.emit(str(e))

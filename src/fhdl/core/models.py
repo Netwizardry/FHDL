@@ -134,6 +134,7 @@ class PumpEntity:
     efficiency: float = 0.75
     npshr: float = 0.5          # m
     curve_id: str = ""
+    curve_points: list = field(default_factory=list)  # [(flow_m3s, head_m, eff)] — 라이브러리에서 주입
     pump_type: str = "normal"   # "normal" | "submersible"
     min_level: float = 0.0      # m — 수중펌프 최소 수위 (이하이면 정지)
     submerge_ref: str = ""      # 수위 감시 기준 탱크 ID

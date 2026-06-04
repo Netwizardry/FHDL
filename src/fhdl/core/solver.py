@@ -136,8 +136,8 @@ class HydraulicSolver:
         #   pipe_q:      배관별 통과 유량 (파이프 ID 기준)
         node_demand, pipe_q = self._pass1_flow_synthesis(adj, rev_adj, sources, terminals)
 
-        # 펌프 공급 수두(흡입수두 − 흡입관손실 + 양정) 사전 계산
-        pump_init = self._pump_supply_heads(rev_adj, pipe_q)
+        # 펌프 공급 수두(흡입수두 − 흡입관손실 + 양정/커브운전점) 사전 계산
+        pump_init = self._pump_supply_heads(rev_adj, pipe_q, node_demand)
 
         # Pass 2: 수압 평형 (Newton-Raphson) — 배관 유량 기준 마찰손실 반영
         head_map = self._pass2_hydraulic_balance(adj, pipe_q, sources, pump_init)
@@ -269,13 +269,36 @@ class HydraulicSolver:
             h_f, v, _ = _darcy_weisbach(q, d, L, pipe.roughness, self._nu)
         return h_f + _minor_loss(v, pipe.total_k)
 
+    @staticmethod
+    def _curve_head(points, q: float) -> float:
+        """펌프 커브 [(flow, head, eff)] 에서 유량 q 의 양정을 선형 보간(운전점)."""
+        pts = sorted((p[0], p[1]) for p in points)
+        if not pts:
+            return 0.0
+        if q <= pts[0][0]:
+            return pts[0][1]
+        if q >= pts[-1][0]:
+            return pts[-1][1]
+        for (q0, h0), (q1, h1) in zip(pts, pts[1:]):
+            if q0 <= q <= q1:
+                t = (q - q0) / (q1 - q0) if q1 > q0 else 0.0
+                return h0 + (h1 - h0) * t
+        return pts[-1][1]
+
+    def _pump_boost(self, pump, q: float) -> float:
+        """펌프 양정 결정: 커브가 있으면 운전점(유량 q)의 양정, 없으면 MANUAL head."""
+        if pump.curve_points:
+            return self._curve_head(pump.curve_points, q)
+        return pump.head.value if pump.head.mode == "MANUAL" else 0.0
+
     def _pump_supply_heads(self, rev_adj: Dict[str, List[str]],
-                           pipe_q: Dict[str, float]) -> Dict[str, float]:
-        """펌프별 공급 수두 = 흡입 가용수두 + 양정(manual head).
+                           pipe_q: Dict[str, float],
+                           node_demand: Dict[str, float]) -> Dict[str, float]:
+        """펌프별 공급 수두 = 흡입 가용수두 + 양정.
 
         흡입수두 = (상류 탱크 수면 수두) − (흡입관 마찰·국부손실). 상류 탱크가 없으면
-        펌프 고도를 흡입수두로 본다. head.mode 가 AUTO 인 펌프는 양정 0(사양 선정 대상),
-        MANUAL 양정 펌프는 실제 에너지원으로 주입한다.
+        펌프 고도를 흡입수두로 본다. 양정은 펌프 커브가 있으면 운전점(통과 유량)의 값,
+        없으면 MANUAL head(AUTO 는 0, 사양 선정 대상)를 쓴다.
         """
         res: Dict[str, float] = {}
         for pid, pump in self.em.pumps.items():
@@ -284,14 +307,13 @@ class HydraulicSolver:
                 if up in self.em.tanks:
                     tk = self.em.tanks[up]
                     suction = tk.elevation + tk.level_max
-                    # 흡입관(탱크→펌프) 마찰·국부손실 차감
                     suc_pipe = self._get_pipe(up, pid)
                     if suc_pipe is not None:
                         q = pipe_q.get(suc_pipe.entity_id, 0.0)
                         suction -= self._pipe_loss(suc_pipe, q)
                     break
-            self._pump_suction[pid] = suction   # 흡입측 공급 수두(양정 적용 전)
-            boost = pump.head.value if pump.head.mode == "MANUAL" else 0.0
+            self._pump_suction[pid] = suction
+            boost = self._pump_boost(pump, node_demand.get(pid, 0.0))
             res[pid] = suction + boost
         return res
 
