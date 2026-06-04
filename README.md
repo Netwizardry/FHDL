@@ -6,18 +6,23 @@
 
 ---
 
-## 주요 기능 (v0.2 MVP)
+## 주요 기능
 
-- **정상상태 수리해석** (2-Pass: 유량 역산 → Newton-Raphson 수압 평형)
+- **정상상태 수리해석** (2-Pass: 유량 합성 → Newton-Raphson 수압 평형)
 - **Auto-sizing** — 유속 제약을 만족하는 표준 관경(KS) 자동 선정
-- **마찰 모델** — Darcy-Weisbach(Swamee-Jain) / Hazen-Williams
-- **펌프·탱크 기본 사양 선정** (안전율 적용)
-- **NPSHa 계산 및 캐비테이션 경고**, 수충격 위험 지수·진공 한계 진단
-- **DSL 에디터** (구문 하이라이팅, 실시간 린팅) + **토폴로지 뷰어**
-- **프로젝트별 SQLite 저장** + 전역 부품 라이브러리 DB
-- CSV/JSON 리포트 생성 (provenance 포함)
+- **마찰 모델** — Darcy-Weisbach(Swamee-Jain) / Hazen-Williams, 재질별 물성 자동 적용
+- **부속(밸브·엘보·티·레듀서) 국부손실** + 꺾임각 자동 엘보 K
+- **펌프 양정 주입**(실제 에너지원) 및 탱크/펌프 사양 선정(안전율)
+- **해발 datum**: 노드 z는 기준 해발 상대값, 해발·온도로 대기압·물성 산정
+- **NPSHa·캐비테이션·수충격·진공 한계** 진단, 네트워크 무결성(NET) 검사
+- **5패널 GUI** + **아이소메트릭 2.5D 토폴로지** + 그래프 직접 편집(Inverse Sync)
+- **하단 명령 콘솔(TUI)** — 명령어로 모델 편집·해석 (GUI와 동작 공유)
+- **프로젝트 저장/로드/복원**(체크섬 캐시) + **부품 라이브러리 CRUD**
+- 단위계 METRIC/IMPERIAL 표시, CSV/JSON 리포트(provenance)
 
-> 수충격 정밀 해석, 복합 루프망(Hardy-Cross), CAD/BIM 연동은 v0.2+ 로드맵.
+> 수충격 정밀 해석, 복합 루프망(Hardy-Cross), 펌프 커브 운전점, CAD/BIM 연동은 로드맵.
+
+전체 문서: [docs/INDEX.md](docs/INDEX.md)
 
 ---
 
@@ -66,37 +71,38 @@ constraint {
     safety_factor_head = 1.1;
 }
 
-tank reservoir { elevation = 10m; volume = 50m3; level_max = 1.5m; }
-junction j1     { elevation = 5m; }
-terminal sprinkler_A { elevation = 3m; required_q = 80lpm; required_p = 0.1MPa; }
-terminal nozzle_B    { elevation = 2m; required_q = 60lpm; required_p = 0.08MPa; }
+tank reservoir { z = 10m; volume = 50m3; level_max = 1.5m; }
+junction j1     { z = 5m; }
+terminal sprinkler_A { z = 3m; required_q = 80lpm; required_p = 0.1MPa; }
+terminal nozzle_B    { z = 2m; required_q = 60lpm; required_p = 0.08MPa; }
 
 pipe main_pipe { start = reservoir; end = j1;          length = 60m; diameter = auto; material = Steel; }
-pipe branch_A  { start = j1;        end = sprinkler_A; length = 35m; diameter = auto; material = Steel; }
+pipe branch_A  { start = j1;        end = sprinkler_A; length = 35m; diameter = auto; material = PVC;
+                 fittings = [elbow_90, valve_gate]; }
 pipe branch_B  { start = j1;        end = nozzle_B;    length = 40m; diameter = auto; material = Steel; }
 
-connect reservoir -> j1;
-connect j1 -> sprinkler_A;
+connect reservoir -> j1 -> sprinkler_A;
 connect j1 -> nozzle_B;
 ```
 
 **지원 블록 키워드:** `system`, `constraint`, `tank`, `pump`, `junction`, `terminal`, `pipe`, `connect`
-
-`diameter = auto` 로 두면 솔버가 유속 제약을 만족하는 표준 관경을 자동 선정합니다.
+`z` 는 `system.altitude`(기준 해발) 상대 고도이며, `diameter = auto` 로 두면 표준 관경이 자동 선정됩니다.
+전체 문법은 [docs/LANGUAGE.md](docs/LANGUAGE.md).
 
 ---
 
-## GUI 5패널 구조
+## GUI 구조 (5패널 + 하단 명령 콘솔)
 
-| 패널 | 역할 |
+| 영역 | 역할 |
 | :--- | :--- |
-| Project | 프로젝트 생성/열기/저장, 최근 목록 |
-| DSL Editor | FHDL 코드 편집 (하이라이팅, 실시간 린팅, Ctrl+Enter 실행) |
-| Topology Viewer | 배관망 그래프 시각화 (타입별 도형/상태별 색상) |
-| Results Viewer | 노드/배관 결과 테이블, 요약 카드, CSV 내보내기 |
+| Project | 프로젝트 생성(해발·온도)/열기/저장/삭제, 최근 목록 |
+| DSL Editor | FHDL 코드 편집 (하이라이팅, 실시간 린팅, 노드 추가/문법 도움말) |
+| Topology Viewer | **아이소메트릭 2.5D** 시각화, 더블클릭 편집·드래그 연결 |
+| Results Viewer | 노드/배관 결과(단위계 환산), 요약 카드, CSV 내보내기 |
 | Diagnostics | 오류/경고 트리, 더블클릭 시 에디터 해당 줄 이동 |
+| **명령 콘솔(하단)** | 로그 출력 + 명령어 입력(TUI) — [docs/COMMANDS.md](docs/COMMANDS.md) |
 
-테마: `resources/styles/dark_theme.qss` (전역 다크 테마, 단일 진실원)
+상세·단축키: [docs/GUI.md](docs/GUI.md). 테마: `resources/styles/dark_theme.qss`.
 
 ---
 
@@ -108,14 +114,17 @@ FHDL/
 ├── pyproject.toml          # 의존성 단일 진실원
 ├── requirements*.txt       # pip 편의 미러본
 ├── src/fhdl/
-│   ├── core/               # 엔진: parser, semantic, solver, pipeline, report
-│   ├── db/                 # library_db (전역 부품), project_db (프로젝트별)
-│   └── gui/                # main_window + panels/ (5패널) + worker
+│   ├── core/               # 엔진: parser·semantic·solver·pipeline·report
+│   │                       #   + language·fittings·materials·units (단일 진실원)
+│   │                       #   + dsl_editor·command·project_io
+│   ├── db/                 # library_db (전역 부품 CRUD), project_db (프로젝트별)
+│   └── gui/                # main_window + panels/ (5패널) + log_console + library_dialog
 ├── resources/styles/       # dark_theme.qss
 ├── data/library.db         # 전역 부품 라이브러리 (자동 생성)
-├── projects/               # 프로젝트별 작업 공간 (state.db, *.fhd)
-├── tests/                  # pytest 단위 테스트
-└── docs/spec/              # 공식 명세서 (진실원)
+├── projects/               # 프로젝트별 작업공간 (main.fhd, state.db, project.fhproj)
+├── tests/                  # pytest (102개)
+├── docs/                   # 코드 기준 문서 (INDEX·LANGUAGE·SOLVER·…)
+└── archive/                # 구 명세·감사·v0.1 보관
 ```
 
 ---
@@ -123,21 +132,20 @@ FHDL/
 ## 테스트
 
 ```bash
-pytest -q
+pytest -q     # 102개 (파서·솔버·네트워크·재질·부속·DB·프로젝트IO·명령콘솔 등)
 ```
-
-핵심 수리 로직(유량 분배·마찰손실·Auto-sizing·NPSHa)에 대한 단위/회귀 테스트를 포함합니다.
 
 ---
 
 ## 내부 단위 규약
 
 내부 계산은 **SI 기본단위**(유량 m³/s, 압력 Pa, 수두·길이·관경 m)로 수행하며,
-표시 단위(L/min, MPa, mm 등)는 GUI 계층에서 변환합니다. 상세는 `CLAUDE.md` 참조.
+표시 단위(L/min↔GPM, MPa↔psi, m↔ft, mm↔in)는 GUI 계층(`core/units.py`)에서 변환합니다.
 
 ---
 
-## 라이선스 / 문서
+## 문서
 
-- 공식 명세: `docs/spec/`
-- 설계 문서: `design/PROGRAM_DESIGN.md`, `design/TODO_IMPLEMENTATION.md`
+- 문서 색인: [docs/INDEX.md](docs/INDEX.md)
+  — ARCHITECTURE · LANGUAGE · SOLVER · DATA_MODEL · GUI · COMMANDS · DIAGNOSTICS
+- 구 명세·설계·감사 문서(구현 이전): `archive/`

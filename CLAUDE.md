@@ -3,7 +3,7 @@
 **프로젝트:** FHDL (Fluid Hardware Description Language)  
 **목적:** 유체 설비 설계 의도를 DSL로 입력받아 수리 계산을 자동화하는 Python 기반 GUI 시스템  
 **언어:** Python (PySide6 GUI, SQLite DB)  
-**현재 버전:** v0.1 (구현 완료, 명세 수정 및 전면 재구현 진행 중)
+**현재 버전:** v0.2 (구현 완료, 문서는 코드 기준으로 유지)
 
 ---
 
@@ -12,28 +12,30 @@
 ```
 FHDL/
 ├── CLAUDE.md              # 이 파일
-├── docs/spec/             # 공식 명세서 (진실원)
-├── spec_audit/            # 명세 감사 보고서
-├── design/                # 프로그램 설계 문서 (신규 생성 예정)
-├── src/                   # 구현 소스 (신규 재구현 예정)
-│   ├── fhdl/
-│   │   ├── core/          # 핵심 엔진 (parser, solver, pipeline 등)
-│   │   ├── db/            # 데이터베이스 레이어 (프로젝트 DB, 부품 DB)
-│   │   └── gui/           # PySide6 GUI (5패널 구조)
-├── tests/                 # 테스트 코드
-├── archive/               # 이전 버전 및 완료된 작업 보관
-│   └── v0.1/              # 기존 v0.1 구현
-└── resources/             # 아이콘, 스타일시트 등
+├── README.md             # 설치·빠른 시작
+├── docs/                 # 코드 기준 문서 (INDEX·LANGUAGE·SOLVER·DATA_MODEL·GUI·COMMANDS·DIAGNOSTICS)
+├── src/fhdl/
+│   ├── core/             # 엔진 + 단일 진실원(language·fittings·materials·units) + dsl_editor·command·project_io
+│   ├── db/               # project_db (프로젝트별), library_db (전역 부품 CRUD)
+│   └── gui/              # main_window + panels/ (5패널) + log_console + library_dialog
+├── tests/                # pytest (102개)
+├── resources/styles/     # dark_theme.qss
+├── data/library.db       # 전역 부품 라이브러리
+├── projects/             # 프로젝트별 작업공간
+└── archive/              # 구 명세·감사·설계·v0.1 보관
 ```
 
 ---
 
 ## 핵심 기술 규범 (진실원 우선순위)
 
-1. `docs/spec/00_CONCEPT.md` - MVP 범위 및 목적 (최우선)
-2. `docs/spec/11_SOLVER.md`, `09_FORMULAS.md` - 계산 규범
-3. `docs/spec/04_ARCHITECTURE.md`, `10_MODELS.md` - 구조 규범
-4. 기타 상세 명세 문서
+> 구 명세(`archive/spec_legacy/`)가 아니라 **코드와 코드 기준 문서**가 진실원이다.
+
+1. 소스코드 `src/fhdl/` — 동작의 최종 진실원
+2. `docs/LANGUAGE.md` / `docs/SOLVER.md` — 언어·계산 규범
+3. `docs/ARCHITECTURE.md` / `docs/DATA_MODEL.md` — 구조·영속성 규범
+4. `docs/DIAGNOSTICS.md` / `docs/GUI.md` / `docs/COMMANDS.md`
+5. 단일 진실원 모듈: `core/language.py`(키워드), `core/fittings.py`(부속), `core/materials.py`(재질)
 
 ---
 
@@ -96,15 +98,14 @@ FHDL/
 
 ## 작업 진행 상태
 
-- [x] 기존 명세 검토 완료
-- [x] codex 감사 보고서 확인 완료
-- [ ] 명세 수정 (Critical 3건 해소)
-- [ ] 프로그램 설계 문서 작성
-- [ ] 프로그램 설계 감사
-- [ ] 실행 Todo-checklist 작성
-- [ ] 구현 (Python/PySide6)
-- [ ] 구현 테스트 및 감사
-- [ ] 감사 후 수정
+- [x] 명세 검토·감사 (→ `archive/`)
+- [x] 핵심 엔진 구현 (parser·semantic·solver·pipeline)
+- [x] 네트워크 진단(NET001~006), 재질·부속 물성 연동
+- [x] DB 레이어 + 프로젝트 저장/로드/복원 + 라이브러리 CRUD
+- [x] GUI 5패널 + 아이소메트릭 2.5D + 그래프 직접 편집(Inverse Sync)
+- [x] 하단 명령 콘솔(TUI) + 단축키
+- [x] 단일 진실원화(language·fittings·materials) + 코드 기준 문서 재작성
+- [ ] (로드맵) 펌프 커브 운전점, 복합 루프망(Hardy-Cross), 수충격 정밀, CAD/BIM
 
 ---
 

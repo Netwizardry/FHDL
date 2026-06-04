@@ -224,7 +224,7 @@ def _default_fhd(altitude: float, temp: float) -> str:
     """기준 해발고도(datum)와 온도를 반영한 새 프로젝트 템플릿."""
     return f"""\
 // FHDL 새 프로젝트 - 기본 템플릿
-// 자세한 문법은 docs/spec/08_LANGUAGE.md 참조
+// 자세한 문법은 docs/LANGUAGE.md 참조
 //
 // 기준 해발고도(datum) = {altitude:g}m. 아래 노드의 z 는 이 해발 기준 상대값이다.
 // (예: z = 5m → 실제 해발 {altitude + 5:g}m). 대기압은 해발+온도로 자동 계산.
