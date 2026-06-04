@@ -22,6 +22,7 @@ from .panels.editor_panel import EditorPanel
 from .panels.viewer_panel import TopologyViewer
 from .panels.results_panel import ResultsPanel
 from .panels.diagnostics_panel import DiagnosticsPanel
+from .log_console import LogConsole
 from .worker import AnalysisWorker
 
 
@@ -134,7 +135,18 @@ class MainWindow(QMainWindow):
         h_splitter.setSizes([200, 900])
         h_splitter.setChildrenCollapsible(False)
 
-        main_layout.addWidget(h_splitter, stretch=1)
+        # 하단 작업 로그 콘솔 (작은 터미널) — 전체를 수직 분할
+        self._log_console = LogConsole()
+        outer_v = QSplitter(Qt.Orientation.Vertical)
+        outer_v.addWidget(h_splitter)
+        outer_v.addWidget(self._log_console)
+        outer_v.setSizes([640, 130])
+        outer_v.setStretchFactor(0, 1)
+        outer_v.setCollapsible(1, True)
+        self._outer_splitter = outer_v
+
+        main_layout.addWidget(outer_v, stretch=1)
+        self._log_console.info("FHDL 시작됨. 프로젝트를 열거나 새로 만드세요.")
 
     def _build_menu(self):
         mb = self.menuBar()
@@ -160,7 +172,8 @@ class MainWindow(QMainWindow):
         # Run 메뉴
         run_menu = mb.addMenu("실행(&R)")
         self._run_action = QAction("해석 실행(&R)", self)
-        self._run_action.setShortcut(QKeySequence("Ctrl+Return"))
+        # 해석 실행 — Ctrl+Enter 또는 F5
+        self._run_action.setShortcuts([QKeySequence("Ctrl+Return"), QKeySequence("F5")])
         self._run_action.triggered.connect(self._run_analysis)
         run_menu.addAction(self._run_action)
 
@@ -173,11 +186,27 @@ class MainWindow(QMainWindow):
         # 설정 메뉴 — 제약 조건 편집 / 부품 라이브러리 관리
         settings_menu = mb.addMenu("설정(&T)")
         constraint_action = QAction("제약 조건 편집…", self)
+        constraint_action.setShortcut(QKeySequence("Ctrl+E"))
         constraint_action.triggered.connect(self._on_edit_constraints)
         settings_menu.addAction(constraint_action)
         library_action = QAction("부품 라이브러리 관리…", self)
+        library_action.setShortcut(QKeySequence("Ctrl+Shift+L"))
         library_action.triggered.connect(self._on_manage_library)
         settings_menu.addAction(library_action)
+
+        # 보기 메뉴 — 로그 콘솔
+        view_menu = mb.addMenu("보기(&V)")
+        toggle_log = QAction("로그 콘솔 표시/숨김", self)
+        toggle_log.setShortcut(QKeySequence("Ctrl+`"))
+        toggle_log.triggered.connect(self._toggle_log)
+        view_menu.addAction(toggle_log)
+        clear_log = QAction("로그 지우기", self)
+        clear_log.setShortcut(QKeySequence("Ctrl+L"))
+        clear_log.triggered.connect(lambda: self._log_console.clear())
+        view_menu.addAction(clear_log)
+
+    def _toggle_log(self):
+        self._log_console.setVisible(not self._log_console.isVisible())
 
     def _build_status_bar(self):
         sb = self.statusBar()
@@ -213,6 +242,13 @@ class MainWindow(QMainWindow):
     # 상태 기계
     # ------------------------------------------------------------------
 
+    _STATE_LOG_LEVEL = {
+        AppState.SOLVED: "OK", AppState.SAVED: "OK",
+        AppState.VALIDATION_FAILED: "ERROR", AppState.CALC_FAILED: "ERROR",
+        AppState.ABORTED: "WARNING",
+        AppState.VALIDATING: "RUN", AppState.SOLVING: "RUN",
+    }
+
     def _set_state(self, state: AppState, msg: str = ""):
         self._state = state
         label = _STATE_LABELS.get(state, str(state))
@@ -221,11 +257,18 @@ class MainWindow(QMainWindow):
         self._state_label.setStyleSheet(f"color:{color}; padding-right:10px;")
         if msg:
             self._msg_label.setText(msg)
+            # 상태 메시지를 로그 콘솔에도 흘림 (DIRTY 같은 잡음은 제외)
+            if state != AppState.DIRTY and hasattr(self, "_log_console"):
+                self._log_console.log(msg, self._STATE_LOG_LEVEL.get(state, "INFO"))
 
         is_running = state in (AppState.VALIDATING, AppState.SOLVING)
         self._run_action.setEnabled(not is_running)
         self._stop_action.setEnabled(is_running)
         self._progress.setVisible(is_running)
+
+    def _log(self, msg: str, level: str = "INFO"):
+        if hasattr(self, "_log_console"):
+            self._log_console.log(msg, level)
 
     # ------------------------------------------------------------------
     # 이벤트 핸들러
@@ -347,8 +390,10 @@ class MainWindow(QMainWindow):
             if ans != QMessageBox.StandardButton.Yes:
                 return
             new_src = remove_node(src, node_id)
+            self._log(f"노드 '{node_id}' 삭제 (연결 배관·connect 포함)", "WARNING")
         else:
             new_src = set_node_attributes(src, node_id, dlg.get_values())
+            self._log(f"노드 '{node_id}' 속성 수정", "INFO")
         self._editor_panel.set_source(new_src)
         self._run_analysis()
 
@@ -365,6 +410,7 @@ class MainWindow(QMainWindow):
             return
         new_src = set_pipe_attributes(
             self._editor_panel.get_source(), pipe_id, dlg.get_values())
+        self._log(f"배관 '{pipe_id}' 속성 수정", "INFO")
         self._editor_panel.set_source(new_src)
         self._run_analysis()
 
@@ -374,6 +420,7 @@ class MainWindow(QMainWindow):
         db_path = os.path.join(os.getcwd(), "data", "library.db")
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
         db = LibraryDB(db_path)
+        self._log("부품 라이브러리 관리 열기", "INFO")
         try:
             LibraryManagerDialog(db, self).exec()
         finally:
@@ -413,9 +460,11 @@ class MainWindow(QMainWindow):
             if ans != QMessageBox.StandardButton.Yes:
                 return
             new_src = remove_link(src, from_id, to_id)
+            self._log(f"연결 삭제: {from_id} → {to_id}", "WARNING")
         else:
             new_src = add_link(src, from_id, to_id,
                                length=self._link_length(from_id, to_id))
+            self._log(f"연결 추가: {from_id} → {to_id}", "INFO")
         self._editor_panel.set_source(new_src)
         self._run_analysis()
 
@@ -488,6 +537,15 @@ class MainWindow(QMainWindow):
         # 진단 패널 업데이트
         self._diag_panel.update_diagnostics(r.diagnostics)
 
+        # 진단을 로그 콘솔에 출력 (오류/경고)
+        for d in r.diagnostics:
+            if d.severity in ("ERROR", "FATAL"):
+                loc = f" (L{d.source_span.line})" if d.source_span.line > 0 else ""
+                self._log(f"[{d.code}] {d.message}{loc}", "ERROR")
+        for d in r.diagnostics:
+            if d.severity == "WARNING":
+                self._log(f"[{d.code}] {d.message}", "WARNING")
+
         # 에디터 에러 마커 갱신
         error_lines = {}
         for d in r.diagnostics:
@@ -518,6 +576,13 @@ class MainWindow(QMainWindow):
             except Exception:
                 pass
 
+        s = r.summary
+        self._log(
+            f"해석 결과 — 총유량 {s.total_flow * 60000:.1f} L/min · "
+            f"권장 펌프양정 {s.recommended_pump_head:.2f} m · "
+            f"노드 {len(r.node_results)} · 배관 {len(r.pipe_results)}",
+            "OK" if not r.errors else "WARNING")
+
         err_cnt = len(r.errors)
         wrn_cnt = len(r.warnings)
         msg = f"완료 — 오류: {err_cnt}, 경고: {wrn_cnt}"
@@ -525,6 +590,7 @@ class MainWindow(QMainWindow):
         self._set_state(state, msg)
 
     def _on_analysis_error(self, err: str):
+        self._log(f"내부 오류: {err}", "ERROR")
         self._set_state(AppState.CALC_FAILED, f"내부 오류: {err}")
 
     # ------------------------------------------------------------------
