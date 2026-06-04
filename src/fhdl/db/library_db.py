@@ -82,17 +82,12 @@ _MATERIALS = [
     ("CI",     "Cast Iron",        0.00026,  100, 1_800_000, 1100),
 ]
 
+# 부속 K-factor 단일 진실원은 core.fittings.FITTINGS 이다.
+# 라이브러리 DB 는 이를 시드 데이터로 재사용한다 (중복 정의 방지).
+from ..core.fittings import FITTINGS as _CORE_FITTINGS
+
 _FITTINGS = [
-    ("ELBOW90",     "all", 0.90,  "90도 엘보"),
-    ("ELBOW45",     "all", 0.45,  "45도 엘보"),
-    ("TEE_BRANCH",  "all", 1.80,  "티 분기"),
-    ("TEE_THROUGH", "all", 0.60,  "티 직통"),
-    ("GATE_VALVE",  "all", 0.20,  "게이트 밸브"),
-    ("GLOBE_VALVE", "all", 10.0,  "글로브 밸브"),
-    ("CHECK_VALVE", "all", 2.50,  "체크 밸브"),
-    ("REDUCER",     "all", 0.50,  "리듀서"),
-    ("ENTRANCE",    "all", 0.50,  "입구 손실"),
-    ("EXIT",        "all", 1.00,  "출구 손실"),
+    (name, "all", k, desc) for name, (k, desc) in _CORE_FITTINGS.items()
 ]
 
 

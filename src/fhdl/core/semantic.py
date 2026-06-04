@@ -9,6 +9,7 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List, Optional, Tuple
 
+from .fittings import sum_fittings_k
 from .models import (
     ASTNode, ComponentASTNode, ConnectASTNode, ConstraintASTNode,
     ConstraintConfig, DiagnosticItem, EntityMap, FluidConfig,
@@ -204,6 +205,12 @@ class SemanticAnalyzer:
             roughness = self._as_si(a.get("roughness", (0.045, "mm")))
             c_factor = self._as_float(a.get("c_factor", 120.0), "")
 
+            # 국부손실 K = 직접 지정(k_factor) + 명명 부속(fittings) 라이브러리 합산
+            manual_k = self._as_float(a.get("k_factor", 0.0), "")
+            fittings_spec = str(a.get("fittings", ""))
+            if fittings_spec:
+                manual_k += sum_fittings_k(fittings_spec)
+
             em.pipes[cid] = PipeEntity(
                 entity_id=cid,
                 start_id=start,
@@ -213,7 +220,7 @@ class SemanticAnalyzer:
                 material=mat,
                 roughness=roughness,
                 c_factor=c_factor,
-                manual_k=self._as_float(a.get("k_factor", 0.0), ""),
+                manual_k=manual_k,
                 span=span,
             )
 

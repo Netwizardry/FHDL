@@ -11,6 +11,7 @@ from typing import Callable, Dict, List, Optional, Set, Tuple
 
 import networkx as nx
 
+from .fittings import elbow_k_for_angle
 from .models import (
     AnalysisResult, ConstraintConfig, DiagnosticItem, EntityMap,
     FluidConfig, NodeCalcResult, PipeCalcResult, PipeEntity,
@@ -123,13 +124,19 @@ class HydraulicSolver:
                        SourceSpan(),
                        "최소 1개의 terminal을 정의해 요구 유량을 지정하세요.")
 
+        # 꺾임각 기반 자동 피팅 K (auto_k) 산정
+        self._compute_auto_fitting_k(adj, rev_adj)
+
         # Pass 1: 유량 역산
         #   node_demand: 노드별 누적 요구유량 (소스 방향)
         #   pipe_q:      배관별 통과 유량 (파이프 ID 기준)
         node_demand, pipe_q = self._pass1_flow_synthesis(adj, rev_adj, sources, terminals)
 
+        # 펌프 공급 수두(흡입수두 + 양정) 사전 계산
+        pump_init = self._pump_supply_heads(rev_adj)
+
         # Pass 2: 수압 평형 (Newton-Raphson) — 배관 유량 기준 마찰손실 반영
-        head_map = self._pass2_hydraulic_balance(adj, pipe_q, sources)
+        head_map = self._pass2_hydraulic_balance(adj, pipe_q, sources, pump_init)
 
         # 결과 수집
         node_results, pipe_results = self._collect_results(node_demand, pipe_q, head_map)
@@ -201,6 +208,82 @@ class HydraulicSolver:
     def _node_span(self, nid: str) -> SourceSpan:
         ent = self.em.get_node_entity(nid)
         return getattr(ent, "span", None) or SourceSpan()
+
+    # ------------------------------------------------------------------
+    # 펌프 공급 수두 / 자동 피팅 K
+    # ------------------------------------------------------------------
+
+    def _pump_supply_heads(self, rev_adj: Dict[str, List[str]]) -> Dict[str, float]:
+        """펌프별 공급 수두 = 흡입 가용수두 + 양정(manual head).
+
+        흡입측 상류에 탱크가 있으면 그 수면 수두를, 없으면 펌프 고도를 흡입수두로 본다.
+        head.mode 가 AUTO 인 펌프는 양정을 0으로 두어(사양 선정 대상) 고정수두 노드로만
+        취급하고, MANUAL 양정이 지정된 펌프는 실제 에너지원으로 네트워크에 주입한다.
+        """
+        res: Dict[str, float] = {}
+        for pid, pump in self.em.pumps.items():
+            suction = pump.elevation
+            for up in rev_adj.get(pid, []):
+                if up in self.em.tanks:
+                    tk = self.em.tanks[up]
+                    suction = tk.elevation + tk.level_max
+                    break
+            boost = pump.head.value if pump.head.mode == "MANUAL" else 0.0
+            res[pid] = suction + boost
+        return res
+
+    def _dir_vec(self, a: str, b: str):
+        ea = self.em.get_node_entity(a)
+        eb = self.em.get_node_entity(b)
+        if not ea or not eb:
+            return None
+        dx = getattr(eb, "x", 0.0) - getattr(ea, "x", 0.0)
+        dy = getattr(eb, "y", 0.0) - getattr(ea, "y", 0.0)
+        dz = eb.elevation - ea.elevation
+        if abs(dx) < 1e-12 and abs(dy) < 1e-12 and abs(dz) < 1e-12:
+            return None
+        return (dx, dy, dz)
+
+    @staticmethod
+    def _turn_angle(a, b) -> float:
+        dot = a[0]*b[0] + a[1]*b[1] + a[2]*b[2]
+        na = math.sqrt(a[0]**2 + a[1]**2 + a[2]**2)
+        nb = math.sqrt(b[0]**2 + b[1]**2 + b[2]**2)
+        if na < 1e-9 or nb < 1e-9:
+            return 0.0
+        cos = max(-1.0, min(1.0, dot / (na * nb)))
+        return math.degrees(math.acos(cos))
+
+    def _compute_auto_fitting_k(self, adj: Dict[str, List[str]],
+                               rev_adj: Dict[str, List[str]]) -> None:
+        """경로 꺾임각으로 각 하류 배관의 자동 엘보 K(auto_k)를 산정한다.
+
+        노드에서 (들어오는 배관 방향 ↔ 나가는 배관 방향) 사이 각도를 구해,
+        가장 잘 정렬된(직진에 가까운) 진입 배관 기준 엘보 K 를 나가는 배관에 더한다.
+        좌표/고도가 없어 방향을 알 수 없으면 0(영향 없음).
+        """
+        for pipe in self.em.pipes.values():
+            pipe.auto_k = 0.0
+        for nid in self.em.all_node_ids():
+            ups = rev_adj.get(nid, [])
+            downs = adj.get(nid, [])
+            if not ups or not downs:
+                continue
+            for dn in downs:
+                out_pipe = self._get_pipe(nid, dn)
+                v_out = self._dir_vec(nid, dn)
+                if out_pipe is None or v_out is None:
+                    continue
+                best_angle = None
+                for up in ups:
+                    v_in = self._dir_vec(up, nid)
+                    if v_in is None:
+                        continue
+                    ang = self._turn_angle(v_in, v_out)
+                    if best_angle is None or ang < best_angle:
+                        best_angle = ang
+                if best_angle is not None:
+                    out_pipe.auto_k += elbow_k_for_angle(best_angle)
 
     # ------------------------------------------------------------------
     # 토폴로지 무결성 검사 (NET001/003/004/005)
@@ -356,18 +439,20 @@ class HydraulicSolver:
         self,
         adj: Dict, pipe_q: Dict[str, float],
         sources: List[str],
+        pump_init: Optional[Dict[str, float]] = None,
     ) -> Dict[str, float]:
         """노드별 수두 H (m) 계산 (배관 통과 유량 pipe_q 기준 마찰손실 반영)"""
         all_ids = self.em.all_node_ids()
+        pump_init = pump_init or {}
 
-        # 초기 수두: 탱크는 고도+수위, 나머지는 고도
+        # 초기 수두: 탱크는 고도+수위, 펌프는 공급수두(흡입+양정), 나머지는 고도
         head: Dict[str, float] = {}
         for nid in all_ids:
             if nid in self.em.tanks:
                 tank = self.em.tanks[nid]
                 head[nid] = tank.elevation + tank.level_max
             elif nid in self.em.pumps:
-                head[nid] = self.em.pumps[nid].elevation
+                head[nid] = pump_init.get(nid, self.em.pumps[nid].elevation)
             else:
                 head[nid] = self._node_elevation(nid)
 

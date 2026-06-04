@@ -228,3 +228,51 @@ def test_friction_reflected_in_head():
     # 소스보다 하류 말단 수두가 마찰손실만큼 낮아야 한다
     assert heads["ta"] < heads["src"] - 0.1
     assert heads["j1"] < heads["src"]
+
+
+def _pump_fhd(head_spec: str) -> str:
+    return f"""
+system m {{ unit_system=METRIC; fluid=water; temp=20; }}
+tank res {{ z=2m; level_max=1m; }}
+pump pp {{ z=0m; head={head_spec}; flow=100lpm; }}
+terminal t {{ z=5m; required_q=100lpm; }}
+pipe suc {{ start=res; end=pp; length=3m;  diameter=80mm; material=Steel; }}
+pipe dis {{ start=pp;  end=t;  length=20m; diameter=80mm; material=Steel; }}
+connect res -> pp -> t;
+"""
+
+
+def test_pump_head_injection():
+    """수동 양정 펌프는 네트워크에 실제 에너지를 주입해야 한다."""
+    heads = {}
+    for h in ("0m", "30m", "60m"):
+        r = AnalysisPipeline().run(_pump_fhd(h))
+        nt = {n.node_id: n.head_total for n in r.node_results}
+        heads[h] = (nt["pp"], nt["t"])
+    # 펌프노드 수두가 양정만큼 증가 (흡입수두 3m + 양정)
+    assert abs(heads["0m"][0] - 3.0) < 0.5
+    assert abs(heads["30m"][0] - 33.0) < 0.5
+    assert abs(heads["60m"][0] - 63.0) < 0.5
+    # 말단 수두도 양정에 비례해 상승
+    assert heads["60m"][1] > heads["30m"][1] > heads["0m"][1]
+
+
+def test_auto_fitting_k_on_bend():
+    """좌표상 꺾이는 배관은 auto_k>0, 직선 배관은 ~0 이어야 한다."""
+    code = """
+system m { unit_system=METRIC; fluid=water; temp=20; }
+tank s { z=10m; x=0; y=0; }
+junction j { z=9m; x=10; y=0; }
+terminal bend { z=8m; x=10; y=10; required_q=40lpm; }
+terminal straight { z=8m; x=20; y=0; required_q=40lpm; }
+pipe trunk { start=s; end=j; length=10m; diameter=50mm; material=Steel; }
+pipe p_bend { start=j; end=bend; length=10m; diameter=50mm; material=Steel; }
+pipe p_str  { start=j; end=straight; length=10m; diameter=50mm; material=Steel; }
+connect s -> j;
+connect j -> bend;
+connect j -> straight;
+"""
+    em = AnalysisPipeline().run(code).entity_map
+    # j 에서 90도 꺾이는 p_bend 는 auto_k 부여, 직진 p_str 는 ~0
+    assert em.pipes["p_bend"].auto_k > 0.5
+    assert em.pipes["p_str"].auto_k < 0.1

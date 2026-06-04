@@ -32,10 +32,21 @@
 - 🔧 NET001 오용(말단 없음 → NET001) 수정: 말단 없음은 WRN002로 재분류, NET001은 고립 노드 전용
 - ➕ 테스트 `tests/test_network.py` 10건: NET 진단 4종 + 다중 분기·다중 급수·다중 출력·고도 변경
 
+### 2026-06-04 (3차) 부품·수치해석 연동
+- ➕ **펌프 양정 주입**: MANUAL `head` 펌프를 해석에서 실제 에너지원으로 (흡입수두+양정).
+  AUTO 펌프는 사양 선정 대상으로 유지. (solver `_pump_supply_heads`)
+- ➕ **명명 부속(fitting) 지원**: `pipe { fittings = [ELBOW90, GATE_VALVE, ELBOW90*2]; }`
+  파싱 → 라이브러리 K 합산 → `manual_k` 연동. 단일 진실원 `core/fittings.py` 신설,
+  `library_db` 도 이를 참조(중복 제거).
+- ➕ **auto_k**: connect 경로 꺾임각(좌표·고도 기반)으로 엘보 K 자동 산정 (`_compute_auto_fitting_k`).
+- ➕ 테스트 +9 (test_fittings 8 + 펌프양정/auto_k 2). 총 55개 통과.
+
 ### v0.2+ 이월 항목
 - Phase 5 명명 테스트 전수(T-OPS-002 저널 복구, T-NFR-004 1000노드 성능 등)
 - GUI 아이콘 리소스 세트
 - 토폴로지 뷰어 NET003~005 엣지/노드 색상 구분 렌더링
+- 펌프 커브(curve_id) 기반 운전점 해석 (현재는 고정 양정만)
+- 흡입관 마찰손실을 반영한 펌프 흡입수두 정밀화
 
 ---
 
