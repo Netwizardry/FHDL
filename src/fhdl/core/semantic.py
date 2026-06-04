@@ -60,12 +60,14 @@ class SemanticAnalyzer:
         self, ast: List[ASTNode]
     ) -> Tuple[EntityMap, List[DiagnosticItem]]:
         self._diags: List[DiagnosticItem] = []
+        self._datum = 0.0   # 프로젝트 기준 해발(altitude). 노드 z 는 이 기준 상대값.
         em = EntityMap()
 
         # 1차: 엔티티 생성
         for node in ast:
             if isinstance(node, SystemASTNode):
                 em.fluid = self._build_fluid(node)
+                self._datum = em.fluid.altitude
             elif isinstance(node, ComponentASTNode):
                 self._build_entity(node, em)
             elif isinstance(node, ConnectASTNode):
@@ -310,11 +312,14 @@ class SemanticAnalyzer:
         raw = attrs.get("z", attrs.get("elevation", (0.0, "m")))
         return self._as_si(raw)
 
-    def _check_elevation(self, elev: float, span: SourceSpan):
-        if not (-100 <= elev <= 10000):
+    def _check_elevation(self, rel_z: float, span: SourceSpan):
+        """노드 z 는 프로젝트 datum(해발) 기준 상대값. 절대 해발로 가드 검사한다."""
+        abs_alt = self._datum + rel_z
+        if not (-500 <= abs_alt <= 10000):
             self._warn("SEM005",
-                       f"고도 {elev}m는 허용 범위(-100~10000m)를 벗어납니다.", span,
-                       "실제 지형 고도를 확인하세요.")
+                       f"노드 절대 해발 {abs_alt:g}m (= datum {self._datum:g}m + z {rel_z:g}m)가 "
+                       f"허용 범위(-500~10000m)를 벗어납니다.", span,
+                       "altitude(기준 해발) 또는 노드 z 값을 확인하세요.")
 
     # ------------------------------------------------------------------
     # 진단 헬퍼

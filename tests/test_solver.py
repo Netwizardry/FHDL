@@ -276,3 +276,54 @@ connect j -> straight;
     # j 에서 90도 꺾이는 p_bend 는 auto_k 부여, 직진 p_str 는 ~0
     assert em.pipes["p_bend"].auto_k > 0.5
     assert em.pipes["p_str"].auto_k < 0.1
+
+
+def _npsha_fhd(alt_m, temp=20):
+    return f"""
+system m {{ unit_system=METRIC; fluid=water; temp={temp}; altitude={alt_m}m; }}
+tank res {{ z=2m; level_max=1m; }}
+pump pp {{ z=0m; head=20m; flow=100lpm; npshr=3m; }}
+terminal t {{ z=5m; required_q=100lpm; }}
+pipe suc {{ start=res; end=pp; length=3m;  diameter=80mm; material=Steel; }}
+pipe dis {{ start=pp;  end=t;  length=20m; diameter=80mm; material=Steel; }}
+connect res -> pp -> t;
+"""
+
+
+def _pump_npsha(alt_m, temp=20):
+    r = AnalysisPipeline().run(_npsha_fhd(alt_m, temp))
+    return next(n.npsha for n in r.node_results if n.node_id == "pp")
+
+
+def test_atm_pressure_decreases_with_altitude():
+    from fhdl.core.models import FluidConfig
+    assert FluidConfig.atm_pressure_at(0) > FluidConfig.atm_pressure_at(1000) > \
+        FluidConfig.atm_pressure_at(3000)
+
+
+def test_npsha_drops_with_altitude():
+    """해발고도가 높을수록 대기압이 낮아 NPSHa 가 감소해야 한다."""
+    n0 = _pump_npsha(0)
+    n3000 = _pump_npsha(3000)
+    assert n0 - n3000 > 2.5      # 해발 3000m → 약 3m 대기압수두 감소
+
+
+def test_npsha_drops_with_temperature():
+    """온도가 높을수록 증기압이 높아 NPSHa 가 감소해야 한다."""
+    assert _pump_npsha(0, 20) > _pump_npsha(0, 90) + 4.0
+
+
+def test_datum_relative_z_guard():
+    """노드 z 는 datum(altitude) 기준 상대값 — 절대 해발로 가드 검사."""
+    # datum=70, z=-3 → 절대 67m: 정상
+    ok = AnalysisPipeline().run(
+        "system m{unit_system=METRIC;fluid=water;temp=20;altitude=70m;}\n"
+        "tank res{z=5m;}\nterminal t{z=-3m;required_q=60lpm;}\n"
+        "pipe p{start=res;end=t;length=20m;diameter=50mm;material=Steel;}\nconnect res->t;")
+    assert "SEM005" not in [d.code for d in ok.diagnostics]
+    # datum=9000, z=2000 → 절대 11000m: 범위 초과 경고
+    bad = AnalysisPipeline().run(
+        "system m{unit_system=METRIC;fluid=water;temp=20;altitude=9000m;}\n"
+        "tank res{z=5m;}\nterminal t{z=2000m;required_q=60lpm;}\n"
+        "pipe p{start=res;end=t;length=20m;diameter=50mm;material=Steel;}\nconnect res->t;")
+    assert "SEM005" in [d.code for d in bad.diagnostics]

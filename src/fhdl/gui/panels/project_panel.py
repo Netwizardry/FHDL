@@ -8,9 +8,9 @@ from typing import List, Optional
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QFileDialog, QHBoxLayout, QInputDialog, QLabel,
-    QListWidget, QListWidgetItem, QMenu, QMessageBox,
-    QPushButton, QVBoxLayout, QWidget,
+    QDialog, QDialogButtonBox, QDoubleSpinBox, QFileDialog, QFormLayout,
+    QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMenu,
+    QMessageBox, QPushButton, QVBoxLayout, QWidget,
 )
 
 
@@ -127,20 +127,26 @@ class ProjectPanel(QWidget):
             self._refresh_list()
 
     def _new_project(self):
-        name, ok = QInputDialog.getText(self, "새 프로젝트", "프로젝트 이름:")
-        if not ok or not name.strip():
+        dlg = NewProjectDialog(self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
             return
-        name = name.strip().replace(" ", "_")
+        vals = dlg.get_values()
+        name = vals["name"].strip().replace(" ", "_")
+        if not name:
+            return
+        altitude = vals["altitude"]
+        temp = vals["temp"]
+
         save_dir = QFileDialog.getExistingDirectory(self, "프로젝트 저장 위치 선택")
         if not save_dir:
             return
         proj_dir = os.path.join(save_dir, name)
         os.makedirs(proj_dir, exist_ok=True)
-        # 기본 파일 생성
+        # 기본 파일 생성 (해발고도 datum + 온도 반영)
         fhd_path = os.path.join(proj_dir, "main.fhd")
         config_path = os.path.join(proj_dir, "config.fhproj")
         if not os.path.exists(fhd_path):
-            Path(fhd_path).write_text(_DEFAULT_FHD, encoding="utf-8")
+            Path(fhd_path).write_text(_default_fhd(altitude, temp), encoding="utf-8")
         if not os.path.exists(config_path):
             import json as _json
             from datetime import datetime
@@ -152,7 +158,8 @@ class ProjectPanel(QWidget):
                     "friction_model": "DW",
                     "unit_system": "METRIC",
                     "fluid_type": "water",
-                    "fluid_temp": 20.0,
+                    "fluid_temp": temp,
+                    "altitude": altitude,
                 },
             }
             Path(config_path).write_text(_json.dumps(cfg, indent=2), encoding="utf-8")
@@ -180,39 +187,92 @@ class ProjectPanel(QWidget):
         self._current_path = path
 
 
-_DEFAULT_FHD = """\
+class NewProjectDialog(QDialog):
+    """새 프로젝트 생성 — 이름·기준 해발고도(datum)·유체 온도 입력."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("새 프로젝트")
+        self.setMinimumWidth(340)
+
+        lay = QVBoxLayout(self)
+        info = QLabel(
+            "기준 해발고도(datum)를 정합니다. 이후 노드의 z 값은\n"
+            "이 해발을 기준으로 한 상대 고도(+/−)이며,\n"
+            "해발고도와 온도로 대기압·물성이 자동 계산됩니다.")
+        info.setStyleSheet("color:#9CDCFE; font-size:11px;")
+        lay.addWidget(info)
+
+        form = QFormLayout()
+        self._name = QLineEdit("project1")
+        self._alt = QDoubleSpinBox()
+        self._alt.setRange(-500.0, 10000.0)
+        self._alt.setSuffix(" m")
+        self._alt.setDecimals(1)
+        self._alt.setValue(0.0)
+        self._temp = QDoubleSpinBox()
+        self._temp.setRange(0.0, 100.0)
+        self._temp.setSuffix(" °C")
+        self._temp.setDecimals(1)
+        self._temp.setValue(20.0)
+        form.addRow("프로젝트 이름:", self._name)
+        form.addRow("기준 해발고도:", self._alt)
+        form.addRow("유체 온도:", self._temp)
+        lay.addLayout(form)
+
+        btns = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok |
+            QDialogButtonBox.StandardButton.Cancel)
+        btns.accepted.connect(self.accept)
+        btns.rejected.connect(self.reject)
+        lay.addWidget(btns)
+
+    def get_values(self) -> dict:
+        return {
+            "name": self._name.text(),
+            "altitude": self._alt.value(),
+            "temp": self._temp.value(),
+        }
+
+
+def _default_fhd(altitude: float, temp: float) -> str:
+    """기준 해발고도(datum)와 온도를 반영한 새 프로젝트 템플릿."""
+    return f"""\
 // FHDL 새 프로젝트 - 기본 템플릿
 // 자세한 문법은 docs/spec/08_LANGUAGE.md 참조
+//
+// 기준 해발고도(datum) = {altitude:g}m. 아래 노드의 z 는 이 해발 기준 상대값이다.
+// (예: z = 5m → 실제 해발 {altitude + 5:g}m). 대기압은 해발+온도로 자동 계산.
 
-system main {
+system main {{
     unit_system = METRIC;
     fluid = water;
-    temp = 20;
-    altitude = 0m;
+    temp = {temp:g};
+    altitude = {altitude:g}m;
     friction_model = DW;
-}
+}}
 
-tank source {
-    elevation = 5m;
-}
+tank source {{
+    z = 5m;
+}}
 
-pump p1 {
-    elevation = 0m;
-}
+pump p1 {{
+    z = 0m;
+}}
 
-terminal t1 {
-    elevation = 0m;
+terminal t1 {{
+    z = 0m;
     required_q = 100lpm;
     required_p = 0.1MPa;
-}
+}}
 
-pipe pipe1 {
+pipe pipe1 {{
     start = source;
     end = t1;
     length = 50m;
     diameter = auto;
     material = Steel;
-}
+}}
 
 connect source -> pipe1 -> t1;
 """

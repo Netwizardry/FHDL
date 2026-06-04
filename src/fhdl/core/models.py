@@ -102,10 +102,16 @@ class FluidConfig:
         pvap_mmhg = 10 ** log_pvap_mmhg
         return pvap_mmhg * 133.322
 
+    @staticmethod
+    def atm_pressure_at(abs_altitude_m: float) -> float:
+        """절대 해발고도(m)에서의 대기압(Pa). 표준 기압식(ISA)."""
+        h = abs_altitude_m
+        return 101325.0 * (1 - 2.25577e-5 * h) ** 5.25588
+
     @property
     def atm_pressure(self) -> float:
-        h = self.altitude
-        return 101325.0 * (1 - 2.25577e-5 * h) ** 5.25588
+        """프로젝트 기준 해발(datum=altitude)에서의 대기압(Pa)."""
+        return self.atm_pressure_at(self.altitude)
 
 
 @dataclass

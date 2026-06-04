@@ -86,6 +86,7 @@ class HydraulicSolver:
         self.fluid = em.fluid
         self.cancel_fn = cancel_fn
         self._diags: List[DiagnosticItem] = []
+        self._pump_suction: Dict[str, float] = {}
 
         self._nu = self.fluid.kinematic_viscosity
         self._rho = self.fluid.density
@@ -210,6 +211,18 @@ class HydraulicSolver:
         return getattr(ent, "span", None) or SourceSpan()
 
     # ------------------------------------------------------------------
+    # 해발고도(datum) 기반 대기압
+    # ------------------------------------------------------------------
+
+    def _abs_altitude(self, nid: str) -> float:
+        """노드의 절대 해발고도 = 프로젝트 datum(altitude) + 노드 상대 z."""
+        return self.fluid.altitude + self._node_elevation(nid)
+
+    def _atm_pa_at(self, nid: str) -> float:
+        """노드 실제 해발고도에서의 대기압(Pa)."""
+        return FluidConfig.atm_pressure_at(self._abs_altitude(nid))
+
+    # ------------------------------------------------------------------
     # 펌프 공급 수두 / 자동 피팅 K
     # ------------------------------------------------------------------
 
@@ -228,6 +241,7 @@ class HydraulicSolver:
                     tk = self.em.tanks[up]
                     suction = tk.elevation + tk.level_max
                     break
+            self._pump_suction[pid] = suction   # 흡입측 공급 수두(양정 적용 전)
             boost = pump.head.value if pump.head.mode == "MANUAL" else 0.0
             res[pid] = suction + boost
         return res
@@ -551,9 +565,14 @@ class HydraulicSolver:
             npsha = 0.0
             if nid in self.em.pumps:
                 pump = self.em.pumps[nid]
-                h_s = h - pump.elevation
-                h_fs = max(0.0, (self._p_atm - p_gauge) / (self._rho * G))
-                npsha = self._h_atm - (self._p_vap / (self._rho * G)) + h_s - h_fs
+                # NPSHa = 대기압수두 + 흡입정수두 − 증기압수두
+                #   대기압: 펌프 실제 해발(datum+z)로 산정 (온도+해발 → 기압)
+                #   흡입정수두: 흡입측 공급수두 − 펌프 고도
+                p_atm = self._atm_pa_at(nid)
+                h_atm = p_atm / (self._rho * G)
+                h_vap = self._p_vap / (self._rho * G)
+                h_s = self._pump_suction.get(nid, pump.elevation) - pump.elevation
+                npsha = h_atm + h_s - h_vap
                 if npsha < pump.npshr * self.em.constraints.safety_factor_npsh:
                     self._warn("WRN003",
                                f"펌프 '{nid}': NPSHa({npsha:.2f}m) < NPSHr({pump.npshr:.2f}m) × SF({self.em.constraints.safety_factor_npsh})",
@@ -702,9 +721,9 @@ class HydraulicSolver:
                 "flow_m3s": pr.flow,
             }
 
-        # 진공 한계 경고
+        # 진공 한계 경고 — 노드 실제 해발의 대기압 기준(절대압 0 이하면 진공)
         for nr in node_results:
-            if nr.p_gauge < -1e5:
+            if nr.p_gauge <= -self._atm_pa_at(nr.node_id):
                 self._warn("WRN005",
                            f"노드 '{nr.node_id}': 압력이 진공 한계({nr.p_gauge:.0f}Pa)에 도달했습니다.",
                            SourceSpan(),
