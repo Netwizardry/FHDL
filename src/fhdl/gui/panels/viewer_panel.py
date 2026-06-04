@@ -145,7 +145,9 @@ class EdgeItem(QGraphicsLineItem):
 # ---------------------------------------------------------------------------
 
 class TopologyViewer(QWidget):
-    entity_selected = Signal(str)
+    entity_selected = Signal(str)            # 노드 선택
+    node_double_clicked = Signal(str)        # 노드 더블클릭 → 속성 편집
+    connection_requested = Signal(str, str)  # 노드 드래그 연결 (from, to)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -159,6 +161,9 @@ class TopologyViewer(QWidget):
         layout.addWidget(self._view)
 
         self._scene.selectionChanged.connect(self._on_selection)
+        # 뷰의 마우스 제스처 → 시그널
+        self._view.on_node_double = self.node_double_clicked.emit
+        self._view.on_connect = self.connection_requested.emit
 
     # -- 공개 API -------------------------------------------------------
 
@@ -342,6 +347,8 @@ def _resolve_type(nid: str, em: EntityMap) -> str:
 # ---------------------------------------------------------------------------
 
 class _ZoomableView(QGraphicsView):
+    """줌/패닝 + 노드 더블클릭(편집)·노드 간 드래그(연결) 제스처."""
+
     def __init__(self, scene: QGraphicsScene):
         super().__init__(scene)
         self.setRenderHint(self.renderHints().Antialiasing)
@@ -349,6 +356,63 @@ class _ZoomableView(QGraphicsView):
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
         self.setStyleSheet("background:#161B22; border:none;")
 
+        # 콜백 (TopologyViewer 가 시그널 emit 에 연결)
+        self.on_node_double = None   # callable(node_id)
+        self.on_connect = None       # callable(from_id, to_id)
+        self._conn_start: Optional[NodeItem] = None
+        self._temp_line = None
+
     def wheelEvent(self, event):
         factor = 1.15 if event.angleDelta().y() > 0 else (1 / 1.15)
         self.scale(factor, factor)
+
+    def _node_at(self, pos) -> Optional[NodeItem]:
+        item = self.itemAt(pos)
+        while item is not None:
+            if isinstance(item, NodeItem):
+                return item
+            item = item.parentItem()
+        return None
+
+    def mouseDoubleClickEvent(self, event):
+        node = self._node_at(event.position().toPoint())
+        if node and callable(self.on_node_double):
+            self.on_node_double(node.node_id)
+            return
+        super().mouseDoubleClickEvent(event)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            node = self._node_at(event.position().toPoint())
+            if node:
+                # 노드에서 드래그 시작 → 연결 제스처 (패닝 억제)
+                self._conn_start = node
+                sp = self.mapToScene(event.position().toPoint())
+                self._temp_line = self.scene().addLine(
+                    QLineF(node.scenePos(), sp),
+                    QPen(QColor("#F0A500"), 1.6, Qt.PenStyle.DashLine),
+                )
+                self._temp_line.setZValue(1000)
+                return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self._conn_start and self._temp_line:
+            sp = self.mapToScene(event.position().toPoint())
+            ln = self._temp_line.line()
+            self._temp_line.setLine(ln.x1(), ln.y1(), sp.x(), sp.y())
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if self._conn_start is not None:
+            start = self._conn_start
+            target = self._node_at(event.position().toPoint())
+            self._conn_start = None
+            if self._temp_line is not None:
+                self.scene().removeItem(self._temp_line)
+                self._temp_line = None
+            if target is not None and target is not start and callable(self.on_connect):
+                self.on_connect(start.node_id, target.node_id)
+            return
+        super().mouseReleaseEvent(event)

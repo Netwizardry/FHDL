@@ -852,6 +852,43 @@ _BTN_STYLE = """
 """
 
 
+class NodeEditDialog(QDialog):
+    """기존 노드의 속성을 편집한다 (값만 교체, 블록 구조 보존).
+
+    fields: [(dsl_key, 표시라벨, 현재값문자열), ...]
+    get_values() 는 {dsl_key: 입력값} 을 반환한다.
+    """
+
+    def __init__(self, node_id: str, node_type: str, fields, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(f"노드 편집 — {node_id} ({node_type})")
+        self.setMinimumWidth(320)
+        self._edits = {}
+
+        lay = QVBoxLayout(self)
+        title = QLabel(f"<b>{node_id}</b> 의 속성을 수정합니다")
+        title.setStyleSheet("color:#9CDCFE;")
+        lay.addWidget(title)
+
+        form = QFormLayout()
+        for key, label, value in fields:
+            e = _edit(value)
+            self._edits[key] = e
+            form.addRow(label + ":", e)
+        lay.addLayout(form)
+
+        btns = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok |
+            QDialogButtonBox.StandardButton.Cancel
+        )
+        btns.accepted.connect(self.accept)
+        btns.rejected.connect(self.reject)
+        lay.addWidget(btns)
+
+    def get_values(self) -> dict:
+        return {k: e.text().strip() for k, e in self._edits.items()}
+
+
 class EditorPanel(QWidget):
     run_requested     = Signal(str)
     text_changed      = Signal(str)

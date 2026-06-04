@@ -12,8 +12,9 @@ from typing import Optional
 from PySide6.QtCore import QSize, Qt, QThreadPool
 from PySide6.QtGui import QAction, QFont, QIcon, QKeySequence
 from PySide6.QtWidgets import (
-    QApplication, QHBoxLayout, QLabel, QMainWindow,
-    QMenuBar, QProgressBar, QSplitter, QStatusBar, QVBoxLayout, QWidget,
+    QApplication, QDialog, QHBoxLayout, QLabel, QMainWindow,
+    QMenuBar, QMessageBox, QProgressBar, QSplitter, QStatusBar,
+    QVBoxLayout, QWidget,
 )
 
 from .panels.project_panel import ProjectPanel
@@ -74,6 +75,7 @@ class MainWindow(QMainWindow):
         self._project_dir: Optional[str] = None
         self._worker: Optional[AnalysisWorker] = None
         self._thread_pool = QThreadPool.globalInstance()
+        self._entity_map = None   # 최근 해석된 EntityMap (그래프 편집용)
 
         self.setWindowTitle("FHDL — Fluid Hardware Description Language")
         self.setMinimumSize(QSize(1200, 700))
@@ -191,6 +193,9 @@ class MainWindow(QMainWindow):
         self._editor_panel.text_changed.connect(self._on_text_changed)
         self._editor_panel.run_requested.connect(lambda _: self._run_analysis())
         self._diag_panel.diagnostic_selected.connect(self._on_diagnostic_selected)
+        # 토폴로지 그래프 편집 → DSL 역반영 (Inverse Sync)
+        self._viewer_panel.node_double_clicked.connect(self._on_node_edit)
+        self._viewer_panel.connection_requested.connect(self._on_connection_requested)
 
     # ------------------------------------------------------------------
     # 상태 기계
@@ -229,6 +234,93 @@ class MainWindow(QMainWindow):
     def _on_diagnostic_selected(self, code: str, line: int):
         if line > 0:
             self._editor_panel.jump_to_line(line)
+
+    # ------------------------------------------------------------------
+    # 그래프 편집 → DSL 역반영 (Inverse Sync)
+    # ------------------------------------------------------------------
+
+    def _node_type_of(self, nid: str) -> str:
+        em = self._entity_map
+        if not em:
+            return "junction"
+        if nid in em.tanks:
+            return "tank"
+        if nid in em.pumps:
+            return "pump"
+        if nid in em.terminals:
+            return "terminal"
+        return "junction"
+
+    def _node_fields(self, ent, ntype: str):
+        """엔티티 현재값 → 편집 다이얼로그 필드 [(dsl_key, 라벨, 표시값)]."""
+        f = [
+            ("z", "고도 z", f"{ent.elevation:g}m"),
+            ("x", "x 좌표", f"{getattr(ent, 'x', 0):g}"),
+            ("y", "y 좌표", f"{getattr(ent, 'y', 0):g}"),
+        ]
+        if ntype == "tank":
+            if ent.volume != float("inf"):
+                f.append(("volume", "용량", f"{ent.volume:g}m3"))
+            f.append(("level_max", "최고수위", f"{ent.level_max:g}m"))
+        elif ntype == "terminal":
+            f.append(("required_q", "요구유량", f"{ent.required_q * 60000:g}lpm"))
+            if ent.required_p > 0:
+                f.append(("required_p", "요구압력", f"{ent.required_p / 1e6:g}MPa"))
+            else:
+                f.append(("required_p", "요구압력", ""))
+        elif ntype == "pump":
+            f.append(("npshr", "NPSHr", f"{ent.npshr:g}m"))
+            f.append(("efficiency", "효율", f"{ent.efficiency:g}"))
+        return f
+
+    def _on_node_edit(self, node_id: str):
+        em = self._entity_map
+        if not em:
+            return
+        ent = em.get_node_entity(node_id)
+        if ent is None:
+            return
+        from .panels.editor_panel import NodeEditDialog
+        from ..core.dsl_editor import set_node_attributes
+
+        ntype = self._node_type_of(node_id)
+        dlg = NodeEditDialog(node_id, ntype, self._node_fields(ent, ntype), self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        new_src = set_node_attributes(
+            self._editor_panel.get_source(), node_id, dlg.get_values())
+        self._editor_panel.set_source(new_src)
+        self._run_analysis()
+
+    def _on_connection_requested(self, from_id: str, to_id: str):
+        from ..core.dsl_editor import add_link, remove_link, has_link
+
+        src = self._editor_panel.get_source()
+        if has_link(src, from_id, to_id):
+            ans = QMessageBox.question(
+                self, "연결 삭제",
+                f"{from_id} → {to_id} 연결(pipe/connect)을 삭제할까요?")
+            if ans != QMessageBox.StandardButton.Yes:
+                return
+            new_src = remove_link(src, from_id, to_id)
+        else:
+            new_src = add_link(src, from_id, to_id,
+                               length=self._link_length(from_id, to_id))
+        self._editor_panel.set_source(new_src)
+        self._run_analysis()
+
+    def _link_length(self, from_id: str, to_id: str) -> str:
+        """두 노드 좌표 거리로 기본 배관 길이 추정 (없으면 10m)."""
+        em = self._entity_map
+        a = em.get_node_entity(from_id) if em else None
+        b = em.get_node_entity(to_id) if em else None
+        if a is not None and b is not None:
+            import math
+            d = math.hypot(getattr(a, "x", 0) - getattr(b, "x", 0),
+                           getattr(a, "y", 0) - getattr(b, "y", 0))
+            if d > 0:
+                return f"{d:.1f}m"
+        return "10m"
 
     def _save(self, _path: str = ""):
         if not self._project_dir:
@@ -299,6 +391,7 @@ class MainWindow(QMainWindow):
         self._results_panel.update_result(r)
 
         # 토폴로지 뷰어 업데이트
+        self._entity_map = r.entity_map
         if r.entity_map:
             self._viewer_panel.update_from_result(r)
 
