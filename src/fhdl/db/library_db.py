@@ -166,9 +166,12 @@ class LibraryDB:
         return dict(row) if row else None
 
     def get_fitting_k(self, fitting_type: str, nominal_size: str = "all") -> float:
+        # core.fittings 의 정본 키로 정규화 (대문자 별칭·대소문자 허용)
+        from ..core.fittings import _canonical
+        key = _canonical(fitting_type) or fitting_type
         row = self._conn.execute(
             "SELECT k_factor FROM fitting_kfactors WHERE fitting_type=? AND (nominal_size=? OR nominal_size='all') ORDER BY nominal_size DESC LIMIT 1",
-            (fitting_type, nominal_size),
+            (key, nominal_size),
         ).fetchone()
         return row["k_factor"] if row else 1.0
 

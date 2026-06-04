@@ -179,16 +179,14 @@ th{background:#333;color:#4EC9B0;text-align:left}
 
 <h3>tank — 수원 / 저수조</h3>
 <pre><span class="kw">tank</span> T1 {
-    elevation        = 0m;      <span class="cm">// 탱크 바닥 표고</span>
-    volume           = 10m3;    <span class="cm">// 저수 용량 (생략 시 무한)</span>
-    level_max        = 2m;      <span class="cm">// 최고 수위 (바닥 기준)</span>
-    inlet_elevation  = 1.8m;   <span class="cm">// 입구 높이 (선택)</span>
-    outlet_elevation = 0.05m;  <span class="cm">// 출구 높이 (선택)</span>
+    z         = 0m;      <span class="cm">// 해발(datum) 기준 상대 고도</span>
+    volume    = 10m3;    <span class="cm">// 저수 용량 (생략 시 무한)</span>
+    level_max = 2m;      <span class="cm">// 최고 수위 (바닥 기준)</span>
 }</pre>
 
 <h3>pump — 일반 펌프</h3>
 <pre><span class="kw">pump</span> P1 {
-    elevation  = 0m;
+    z          = 0m;
     flow       = 100lpm;        <span class="cm">// 정격 유량 (생략 시 auto)</span>
     head       = 20m;           <span class="cm">// 정격 양정 (생략 시 auto)</span>
     efficiency = 0.75;          <span class="cm">// 효율 0~1</span>
@@ -200,7 +198,7 @@ th{background:#333;color:#4EC9B0;text-align:left}
     pump_type    = submersible; <span class="cm">// 수중펌프 선언</span>
     min_level    = 0.3m;        <span class="cm">// 최소 수위 — 이하면 펌프 정지 (소손 방지)</span>
     submerge_ref = T1;          <span class="cm">// 수위 감시 기준 탱크 ID</span>
-    elevation    = 0m;          <span class="cm">// 탱크와 동일 표고로 설정</span>
+    z            = 0m;          <span class="cm">// 탱크와 동일 표고로 설정</span>
     flow         = 80lpm;
     head         = 15m;
     efficiency   = 0.70;
@@ -209,14 +207,14 @@ th{background:#333;color:#4EC9B0;text-align:left}
 
 <h3>terminal — 말단 노드</h3>
 <pre><span class="kw">terminal</span> T1 {
-    elevation  = 0m;
+    z          = 0m;
     required_q = 100lpm;
     required_p = 0.1MPa;
 }</pre>
 
 <h3>junction — 분기점</h3>
 <pre><span class="kw">junction</span> J1 {
-    elevation = 3m;
+    z         = 3m;
 }</pre>
 
 <h3>pipe — 배관 (관경은 자동 산정)</h3>
@@ -225,7 +223,7 @@ th{background:#333;color:#4EC9B0;text-align:left}
     end      = T1;
     diameter = auto;            <span class="cm">// 관경 자동 산정</span>
     material = Steel;           <span class="cm">// 배관 자재</span>
-    fittings = {elbow_90:2, valve_gate:1};  <span class="cm">// 피팅류</span>
+    fittings = [elbow_90*2, valve_gate];  <span class="cm">// 피팅류 (개수: name*N)</span>
 }</pre>
 
 <h3>connect — 배관망 연결</h3>
@@ -502,19 +500,14 @@ class AddNodeDialog(QDialog):
         self._t_elev       = _edit("0m")
         self._t_volume     = _edit("")        # 빈 칸 = 무한
         self._t_level_max  = _edit("2m")
-        self._t_inlet_elev = _edit("")        # 선택
-        self._t_out_elev   = _edit("")        # 선택
 
-        form.addRow("표고 (바닥):", self._t_elev)
+        form.addRow("z (해발 기준 상대):", self._t_elev)
         form.addRow("용량 (m³):", self._t_volume)
         form.addRow("", QLabel("빈 칸 = 무한 용량 (수원)", self))
         form.addRow("최고 수위:", self._t_level_max)
-        form.addRow("입구 높이:", self._t_inlet_elev)
-        form.addRow("출구 높이:", self._t_out_elev)
-        form.addRow("", QLabel("높이는 탱크 바닥 기준 / 빈 칸 생략", self))
+        form.addRow("", QLabel("z 는 프로젝트 기준 해발(datum) 상대값", self))
 
-        for widget in (self._t_elev, self._t_volume, self._t_level_max,
-                       self._t_inlet_elev, self._t_out_elev):
+        for widget in (self._t_elev, self._t_volume, self._t_level_max):
             widget.textChanged.connect(lambda _: self._update_preview())
 
         # hint 레이블 스타일
@@ -750,7 +743,7 @@ class AddNodeDialog(QDialog):
 
     def _gen_tank(self, name: str) -> str:
         lines = [f"tank {name} {{"]
-        lines.append(f"    elevation = {self._t_elev.text() or '0m'};")
+        lines.append(f"    z = {self._t_elev.text() or '0m'};")
         vol = self._t_volume.text().strip()
         if vol:
             unit = "m3" if not any(c.isalpha() for c in vol) else ""
@@ -758,12 +751,6 @@ class AddNodeDialog(QDialog):
         lmax = self._t_level_max.text().strip()
         if lmax:
             lines.append(f"    level_max = {lmax};")
-        inlet = self._t_inlet_elev.text().strip()
-        if inlet:
-            lines.append(f"    inlet_elevation  = {inlet};")
-        outlet = self._t_out_elev.text().strip()
-        if outlet:
-            lines.append(f"    outlet_elevation = {outlet};")
         lines.append("}")
         return "\n".join(lines)
 
@@ -778,7 +765,7 @@ class AddNodeDialog(QDialog):
             sub_ref = self._p_sub_ref.text().strip()
             if sub_ref:
                 lines.append(f"    submerge_ref = {sub_ref};")
-        lines.append(f"    elevation    = {self._p_elev.text() or '0m'};")
+        lines.append(f"    z            = {self._p_elev.text() or '0m'};")
         flow = self._p_flow.text().strip()
         if flow:
             lines.append(f"    flow         = {flow};")
@@ -796,7 +783,7 @@ class AddNodeDialog(QDialog):
 
     def _gen_terminal(self, name: str) -> str:
         lines = [f"terminal {name} {{"]
-        lines.append(f"    elevation  = {self._tm_elev.text() or '0m'};")
+        lines.append(f"    z          = {self._tm_elev.text() or '0m'};")
         lines.append(f"    required_q = {self._tm_q.text() or '100lpm'};")
         lines.append(f"    required_p = {self._tm_p.text() or '0.1MPa'};")
         lines.append("}")
@@ -804,7 +791,7 @@ class AddNodeDialog(QDialog):
 
     def _gen_junction(self, name: str) -> str:
         return (f"junction {name} {{\n"
-                f"    elevation = {self._j_elev.text() or '0m'};\n"
+                f"    z = {self._j_elev.text() or '0m'};\n"
                 f"}}")
 
     def _gen_pipe(self, name: str) -> str:
@@ -814,11 +801,11 @@ class AddNodeDialog(QDialog):
         lines.append(f"    diameter = auto;")
         mat_key = self._pp_mat.currentData() or "Steel"
         lines.append(f"    material = {mat_key};")
-        # 수량 > 0인 피팅만 포함
+        # 수량 > 0인 피팅만 포함 (list 문법 — 블록 중괄호와 충돌 방지)
         active = [(k, sp.value()) for k, sp in self._fitting_spins.items() if sp.value() > 0]
         if active:
-            fit_str = ", ".join(f"{k}:{v}" for k, v in active)
-            lines.append(f"    fittings = {{{fit_str}}};")
+            fit_str = ", ".join(f"{k}*{v}" if v > 1 else k for k, v in active)
+            lines.append(f"    fittings = [{fit_str}];")
         lines.append("}")
         return "\n".join(lines)
 

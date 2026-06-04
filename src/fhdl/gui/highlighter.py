@@ -41,11 +41,13 @@ class FHDLHighlighter(QSyntaxHighlighter):
         # 속성 키워드
         attr_fmt = _fmt("#9CDCFE")
         for attr in (
-            "elevation", "flow", "head", "length", "diameter", "material",
-            "required_q", "required_p", "k_factor", "c_factor",
+            "z", "elevation", "flow", "head", "length", "diameter", "material",
+            "required_q", "required_p", "k_factor", "c_factor", "fittings",
             "roughness", "temp", "altitude", "unit_system",
             "friction_model", "velocity_min", "velocity_max",
+            "safety_factor_head", "safety_factor_npsh",
             "volume", "level_max", "efficiency", "npshr",
+            "pump_type", "min_level", "submerge_ref",
             "start", "end", "x", "y",
         ):
             self._rules.append((

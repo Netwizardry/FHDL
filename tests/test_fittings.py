@@ -39,9 +39,23 @@ def test_sum_fittings_k():
 
 def test_elbow_k_for_angle():
     assert elbow_k_for_angle(0) == 0.0
-    assert abs(elbow_k_for_angle(45) - 0.45) < 1e-9
+    assert abs(elbow_k_for_angle(45) - 0.40) < 1e-9   # 45도 엘보 K
     assert elbow_k_for_angle(90) == 0.90
-    assert elbow_k_for_angle(120) == 0.90       # 90도 이상 캡
+    assert elbow_k_for_angle(120) == 0.90             # 90도 이상 캡
+
+
+def test_gui_fitting_keys_and_syntax():
+    """GUI 다이얼로그가 생성하는 소문자 키·list 문법이 엔진에 반영되어야 한다."""
+    from fhdl.core.fittings import parse_fittings, fitting_k
+    # GUI 소문자 키 인식
+    assert fitting_k("elbow_90") == 0.90
+    assert fitting_k("valve_gate") == 0.20
+    assert fitting_k("valve_globe") == 10.0
+    # GUI 생성형(list, 개수표기): fittings = [elbow_90*2, valve_gate]
+    assert parse_fittings("[elbow_90*2, valve_gate]") == [("elbow_90", 2), ("valve_gate", 1)]
+    assert abs(sum_fittings_k("[elbow_90*2, valve_gate]") - 2.0) < 1e-9
+    # 파이프라인 end-to-end 연동(국부손실 > 0)
+    assert _hk("fittings=[elbow_90*2, valve_gate];") > 0.0
 
 
 # --- 수치해석 연동 ---------------------------------------------------------
