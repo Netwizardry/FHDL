@@ -165,6 +165,20 @@ def remove_pipe(source: str, pipe_id: str) -> str:
 # 연결(드래그) = pipe + connect 한 쌍
 # ---------------------------------------------------------------------------
 
+def add_node(source: str, ntype: str, node_id: str, attrs: Dict[str, str]) -> str:
+    """노드 블록을 새로 추가한다 (같은 id 가 이미 있으면 그대로)."""
+    if _find_node_block(source, node_id):
+        return source
+    lines = [f"{ntype} {node_id} {{"]
+    for key, value in attrs.items():
+        if value not in (None, ""):
+            lines.append(f"    {key} = {value};")
+    lines.append("}")
+    block = "\n".join(lines) + "\n"
+    sep = "" if source.endswith("\n") else "\n"
+    return source + sep + block
+
+
 def remove_node(source: str, node_id: str) -> str:
     """노드 블록과 그 노드에 연결된 배관·connect 문을 함께 제거한다.
 

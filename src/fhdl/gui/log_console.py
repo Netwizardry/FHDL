@@ -4,10 +4,11 @@ from __future__ import annotations
 import html
 from datetime import datetime
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
-    QHBoxLayout, QLabel, QPlainTextEdit, QPushButton, QVBoxLayout, QWidget,
+    QHBoxLayout, QLabel, QLineEdit, QPlainTextEdit, QPushButton,
+    QVBoxLayout, QWidget,
 )
 
 
@@ -17,14 +18,19 @@ _LEVEL_COLORS = {
     "WARNING": "#D7BA7D",   # 노랑
     "ERROR":   "#F48771",   # 빨강
     "RUN":     "#C586C0",   # 보라 (실행 동작)
+    "CMD":     "#DCDCAA",   # 노랑 (입력 명령 에코)
 }
 
 
 class LogConsole(QWidget):
-    """작은 터미널 형태의 읽기 전용 로그 출력 패널."""
+    """작은 터미널 — 로그 출력 + 명령어 입력(TUI). GUI 작업을 명령으로도 수행."""
+
+    command_entered = Signal(str)   # 입력된 명령어
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._history: list = []
+        self._hist_idx = 0
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(0)
@@ -59,6 +65,54 @@ class LogConsole(QWidget):
             "selection-background-color:#264F78;}")
         self._view.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         lay.addWidget(self._view, 1)
+
+        # 명령어 입력줄 (TUI)
+        input_row = QWidget()
+        ir = QHBoxLayout(input_row)
+        ir.setContentsMargins(6, 2, 6, 3)
+        ir.setSpacing(4)
+        prompt = QLabel("›")
+        prompt.setStyleSheet("color:#4EC9B0; font-weight:bold;")
+        ir.addWidget(prompt)
+        self._input = QLineEdit()
+        self._input.setPlaceholderText("명령어 입력 (help 입력 시 목록)  예: add tank T1 z=10m / link A B / run")
+        self._input.setStyleSheet(
+            "QLineEdit{background:#1A1A1A;color:#D4D4D4;border:1px solid #333;"
+            "border-radius:2px;padding:2px 4px;}")
+        self._input.setFont(QFont("Consolas, 'Courier New', monospace", 10))
+        self._input.returnPressed.connect(self._on_enter)
+        self._input.installEventFilter(self)
+        ir.addWidget(self._input, 1)
+        lay.addWidget(input_row)
+
+    def _on_enter(self):
+        text = self._input.text().strip()
+        if not text:
+            return
+        self.log(text, "CMD")
+        self._history.append(text)
+        self._hist_idx = len(self._history)
+        self._input.clear()
+        self.command_entered.emit(text)
+
+    def eventFilter(self, obj, event):
+        # 위/아래 화살표로 명령 히스토리 탐색
+        from PySide6.QtCore import QEvent
+        if obj is self._input and event.type() == QEvent.Type.KeyPress:
+            key = event.key()
+            if key == Qt.Key.Key_Up and self._history:
+                self._hist_idx = max(0, self._hist_idx - 1)
+                self._input.setText(self._history[self._hist_idx])
+                return True
+            if key == Qt.Key.Key_Down and self._history:
+                self._hist_idx = min(len(self._history), self._hist_idx + 1)
+                self._input.setText(self._history[self._hist_idx]
+                                    if self._hist_idx < len(self._history) else "")
+                return True
+        return super().eventFilter(obj, event)
+
+    def focus_input(self):
+        self._input.setFocus()
 
     # -- 출력 API -------------------------------------------------------
 

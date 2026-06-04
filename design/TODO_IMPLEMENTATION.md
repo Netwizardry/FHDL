@@ -113,6 +113,14 @@
   · 부속: 기존 core/fittings 공유 유지(GUI 키 전부 정합 확인).
 - 테스트 +6. 총 93개 통과.
 
+### 2026-06-04 (11차) 하단 명령 콘솔(TUI) — 명령어로 GUI 조작
+- 하단 로그 콘솔에 **명령어 입력줄** 추가 → GUI 메뉴 작업을 명령으로도 수행(공유).
+- core/command.py: execute_command(순수) — add/set/del/link/unlink/constraint/
+  ls/run/save/clear/help. dsl_editor 재사용, (new_source, messages, action) 반환.
+- dsl_editor.add_node 추가. log_console: 입력줄·명령 히스토리(↑↓)·command_entered 시그널.
+- main_window: 명령 → 소스 갱신 + 액션(run/save/clear) 처리. 단축키 Ctrl+; (입력 포커스).
+- 테스트 +9. 총 102개 통과.
+
 ### v0.2+ 이월 항목
 - Phase 5 명명 테스트 전수(T-OPS-002 저널 복구, T-NFR-004 1000노드 성능 등)
 - GUI 아이콘 리소스 세트

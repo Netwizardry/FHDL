@@ -204,9 +204,33 @@ class MainWindow(QMainWindow):
         clear_log.setShortcut(QKeySequence("Ctrl+L"))
         clear_log.triggered.connect(lambda: self._log_console.clear())
         view_menu.addAction(clear_log)
+        focus_cmd = QAction("명령 입력줄 포커스", self)
+        focus_cmd.setShortcut(QKeySequence("Ctrl+;"))
+        focus_cmd.triggered.connect(lambda: self._log_console.focus_input())
+        view_menu.addAction(focus_cmd)
 
     def _toggle_log(self):
         self._log_console.setVisible(not self._log_console.isVisible())
+
+    def _execute_command(self, command: str):
+        """하단 콘솔 명령어 실행 — GUI 작업을 명령으로도 수행."""
+        from ..core.command import execute_command
+        res = execute_command(self._editor_panel.get_source(), command, self._entity_map)
+        for m in res.messages:
+            self._log(m, res.level)
+        if res.action == "clear":
+            self._log_console.clear()
+            return
+        if res.action == "save":
+            self._save()
+            return
+        if res.action == "run":
+            self._run_analysis()
+            return
+        if res.new_source is not None and res.new_source != self._editor_panel.get_source():
+            self._editor_panel.set_source(res.new_source)
+            if res.rerun:
+                self._run_analysis()
 
     def _build_status_bar(self):
         sb = self.statusBar()
@@ -237,6 +261,8 @@ class MainWindow(QMainWindow):
         self._viewer_panel.node_double_clicked.connect(self._on_node_edit)
         self._viewer_panel.pipe_double_clicked.connect(self._on_pipe_edit)
         self._viewer_panel.connection_requested.connect(self._on_connection_requested)
+        # 하단 콘솔 명령어 입력 → 실행
+        self._log_console.command_entered.connect(self._execute_command)
 
     # ------------------------------------------------------------------
     # 상태 기계
