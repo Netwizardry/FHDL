@@ -168,6 +168,12 @@ class MainWindow(QMainWindow):
         self._stop_action.setEnabled(False)
         run_menu.addAction(self._stop_action)
 
+        # 설정 메뉴 — 제약 조건 편집
+        settings_menu = mb.addMenu("설정(&T)")
+        constraint_action = QAction("제약 조건 편집…", self)
+        constraint_action.triggered.connect(self._on_edit_constraints)
+        settings_menu.addAction(constraint_action)
+
     def _build_status_bar(self):
         sb = self.statusBar()
         self._state_label = QLabel("대기")
@@ -321,6 +327,29 @@ class MainWindow(QMainWindow):
             return
         new_src = set_pipe_attributes(
             self._editor_panel.get_source(), pipe_id, dlg.get_values())
+        self._editor_panel.set_source(new_src)
+        self._run_analysis()
+
+    def _on_edit_constraints(self):
+        from .panels.editor_panel import NodeEditDialog
+        from ..core.dsl_editor import set_constraint_attributes
+
+        c = self._entity_map.constraints if self._entity_map else None
+        vmin = f"{c.velocity_min:g}m" if c else "0.3m"
+        vmax = f"{c.velocity_max:g}m" if c else "2.5m"
+        sfh = f"{c.safety_factor_head:g}" if c else "1.1"
+        sfn = f"{c.safety_factor_npsh:g}" if c else "1.1"
+        fields = [
+            ("velocity_min", "최소 유속(m/s)", vmin),
+            ("velocity_max", "최대 유속(m/s)", vmax),
+            ("safety_factor_head", "양정 안전율", sfh),
+            ("safety_factor_npsh", "NPSH 안전율", sfn),
+        ]
+        dlg = NodeEditDialog("제약 조건", "constraint", fields, self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        new_src = set_constraint_attributes(
+            self._editor_panel.get_source(), dlg.get_values())
         self._editor_panel.set_source(new_src)
         self._run_analysis()
 

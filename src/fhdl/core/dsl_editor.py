@@ -165,6 +165,28 @@ def remove_pipe(source: str, pipe_id: str) -> str:
 # 연결(드래그) = pipe + connect 한 쌍
 # ---------------------------------------------------------------------------
 
+def set_constraint_attributes(source: str, attrs: Dict[str, str]) -> str:
+    """constraint 블록의 속성을 교체/추가한다. 블록이 없으면 새로 만든다."""
+    m = re.search(r"(\bconstraint\s*\{)(.*?)(\})", source, re.DOTALL)
+    if m:
+        head, body, tail = m.group(1), m.group(2), m.group(3)
+        indent = _detect_indent(body)
+        for key, value in attrs.items():
+            if value is None or value == "":
+                continue
+            body = _set_attr_in_body(body, key, str(value), indent)
+        return source[:m.start()] + head + body + tail + source[m.end():]
+    # 미존재 → 새 블록 추가
+    lines = ["constraint {"]
+    for key, value in attrs.items():
+        if value:
+            lines.append(f"    {key} = {value};")
+    lines.append("}")
+    block = "\n".join(lines) + "\n"
+    sep = "" if source.endswith("\n") else "\n"
+    return source + sep + block
+
+
 def has_link(source: str, start: str, end: str,
              pipe_id: Optional[str] = None) -> bool:
     """start→end 연결(connect 또는 pipe 블록)이 존재하는지."""

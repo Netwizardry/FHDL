@@ -17,6 +17,8 @@ class ResultsPanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._result: Optional[AnalysisResult] = None
+        from ...core.units import display_units
+        self._units = display_units("METRIC")
         self._build_ui()
 
     def _build_ui(self):
@@ -62,20 +64,36 @@ class ResultsPanel(QWidget):
         layout.addWidget(export_btn)
 
     def update_result(self, result: AnalysisResult):
+        from ...core.units import display_units
         self._result = result
-        self._summary_widget.update(result.summary, result.status)
+        us = result.entity_map.fluid.unit_system if result.entity_map else "METRIC"
+        self._units = display_units(us)
+        self._apply_headers()
+        self._summary_widget.update(result.summary, result.status, self._units)
         self._update_pipes(result.pipe_results)
         self._update_nodes(result.node_results)
 
+    def _apply_headers(self):
+        u = self._units
+        self._pipes_table.setHorizontalHeaderLabels(
+            ["배관 ID", f"관경({u['dia'][1]})", f"유량({u['flow'][1]})", "유속(m/s)",
+             f"손실수두({u['length'][1]})", "K계수(자동)", "수충격", "상태", "공식"])
+        self._nodes_table.setHorizontalHeaderLabels(
+            ["노드 ID", f"수두({u['length'][1]})", f"압력({u['press'][1]})",
+             f"유입({u['flow'][1]})", f"유출({u['flow'][1]})", f"NPSHa({u['length'][1]})",
+             f"절대해발({u['length'][1]})", "대기압(kPa)"])
+
     def _update_pipes(self, rows: List[PipeCalcResult]):
+        u = self._units
+        fl, pr, ln, dia = u["flow"][0], u["press"][0], u["length"][0], u["dia"][0]
         self._pipes_table.setRowCount(len(rows))
         for i, r in enumerate(rows):
             vals = [
                 r.pipe_id,
-                f"{r.diameter * 1000:.1f}",
-                f"{r.flow * 60000:.2f}",
+                f"{r.diameter * dia:.1f}",
+                f"{r.flow * fl:.2f}",
                 f"{r.velocity:.3f}",
-                f"{r.h_loss_total:.4f}",
+                f"{r.h_loss_total * ln:.4f}",
                 f"{r.k_total:.2f} ({r.k_auto:.2f})",
                 f"{r.surge_index:.3f}",
                 r.status,
@@ -89,16 +107,18 @@ class ResultsPanel(QWidget):
                 self._pipes_table.setItem(i, j, item)
 
     def _update_nodes(self, rows: List[NodeCalcResult]):
+        u = self._units
+        fl, pr, ln = u["flow"][0], u["press"][0], u["length"][0]
         self._nodes_table.setRowCount(len(rows))
         for i, r in enumerate(rows):
             vals = [
                 r.node_id,
-                f"{r.head_total:.3f}",
-                f"{r.p_gauge / 1e6:.4f}",
-                f"{r.flow_in * 60000:.2f}",
-                f"{r.flow_out * 60000:.2f}",
-                f"{r.npsha:.3f}",
-                f"{r.abs_altitude:.1f}",
+                f"{r.head_total * ln:.3f}",
+                f"{r.p_gauge * pr:.4f}",
+                f"{r.flow_in * fl:.2f}",
+                f"{r.flow_out * fl:.2f}",
+                f"{r.npsha * ln:.3f}",
+                f"{r.abs_altitude * ln:.1f}",
                 f"{r.atm_pressure / 1000:.2f}",
             ]
             for j, v in enumerate(vals):
@@ -153,15 +173,21 @@ class _SummaryWidget(QWidget):
 
         layout.addStretch()
 
-    def update(self, s: SystemSummary, status: str):
+    def update(self, s: SystemSummary, status: str, units=None):
         color = {"OK": "#4EC9B0", "PARTIAL": "#D4AC0D", "FAILED": "#E74C3C"}.get(status, "#CCC")
         self._status_label.setText(f"상태: {status}")
         self._status_label.setStyleSheet(f"font-size:13px; font-weight:bold; color:{color};")
 
-        self._cards[0].setText(f"총 유량: {s.total_flow * 3600:.2f} m³/h ({s.total_flow * 60000:.1f} L/min)")
-        self._cards[1].setText(f"총 요구양정: {s.required_head:.2f} m")
-        self._cards[2].setText(f"권장 펌프 유량: {s.recommended_pump_flow * 3600:.2f} m³/h")
-        self._cards[3].setText(f"권장 펌프 양정: {s.recommended_pump_head:.2f} m")
+        if units is None:
+            from ...core.units import display_units
+            units = display_units("METRIC")
+        fl_f, fl_u = units["flow"]
+        ln_f, ln_u = units["length"]
+
+        self._cards[0].setText(f"총 유량: {s.total_flow * 3600:.2f} m³/h ({s.total_flow * fl_f:.1f} {fl_u})")
+        self._cards[1].setText(f"총 요구양정: {s.required_head * ln_f:.2f} {ln_u}")
+        self._cards[2].setText(f"권장 펌프 유량: {s.recommended_pump_flow * fl_f:.1f} {fl_u}")
+        self._cards[3].setText(f"권장 펌프 양정: {s.recommended_pump_head * ln_f:.2f} {ln_u}")
         self._cards[4].setText(f"권장 탱크 용량: {s.recommended_tank_volume:.2f} m³")
         worst = " → ".join(s.worst_path) if s.worst_path else "─"
         self._cards[5].setText(f"최불리 경로: {worst}")

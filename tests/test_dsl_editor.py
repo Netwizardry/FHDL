@@ -4,8 +4,8 @@ sys.path.insert(0, "src")
 
 from fhdl.core.dsl_editor import (
     add_connection, add_link, add_pipe, has_link, remove_connection,
-    remove_link, remove_pipe, set_node_attributes, set_pipe_attributes,
-    default_pipe_id,
+    remove_link, remove_pipe, set_constraint_attributes, set_node_attributes,
+    set_pipe_attributes, default_pipe_id,
 )
 from fhdl.core.parser import FHDLParser
 from fhdl.core.semantic import SemanticAnalyzer
@@ -151,6 +151,20 @@ def test_remove_link():
     back = remove_link(out, "src", "t2")
     assert default_pipe_id("src", "t2") not in back
     assert "connect src -> t2;" not in back
+
+
+def test_set_constraint_existing_block():
+    src = _SRC + "\nconstraint {\n    velocity_max = 2.5m;\n}\n"
+    out = set_constraint_attributes(src, {"velocity_max": "3.0m", "safety_factor_head": "1.2"})
+    em = _analyze(out)
+    assert em.constraints.velocity_max == 3.0
+    assert em.constraints.safety_factor_head == 1.2
+
+
+def test_set_constraint_creates_block():
+    out = set_constraint_attributes(_SRC, {"velocity_max": "1.8m"})
+    assert "constraint {" in out
+    assert _analyze(out).constraints.velocity_max == 1.8
 
 
 def test_has_link_toggle():
