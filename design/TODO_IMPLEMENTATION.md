@@ -72,6 +72,19 @@
   체인 위치로 추론(_infer_pipe_endpoints). start/end·connect 모두 없으면 SEM003.
 - 테스트 73개 통과.
 
+### 2026-06-04 (7차) 프로젝트 저장/로드/복원 데이터 구조
+- **폴더 구조(진실원 분리)**: main.fhd(입력 진실원) · state.db(결과 캐시) ·
+  project.fhproj(메타) · outputs/.
+- **core/project_io.py**: save_project / load_project / read_meta.
+  - 캐시 유효성 = main.fhd SHA-256 ↔ 저장 시 기록한 analyzed_checksum 비교.
+  - 복원 = 소스 파싱(entity_map, 저렴) + state.db 결과 로드(재계산 회피).
+  - write_fhd 플래그: 분석 직후엔 결과만 캐시(파일 보존), 명시적 저장 시 원자적 기록.
+- **project_db 결과 로더**: get_node_results/get_pipe_results/load_result 추가
+  (기존엔 저장만 가능, 복원 불가였음).
+- **GUI 연동**: 프로젝트 열기 시 캐시 유효하면 패널 즉시 복원(SOLVED),
+  코드 변경 시 캐시 무효 → 재해석 안내(IDLE). 저장은 원자적 + fhproj 갱신.
+- 테스트 +4 (save/restore/캐시무효/누락). 총 77개 통과.
+
 ### v0.2+ 이월 항목
 - Phase 5 명명 테스트 전수(T-OPS-002 저널 복구, T-NFR-004 1000노드 성능 등)
 - GUI 아이콘 리소스 세트

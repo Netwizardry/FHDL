@@ -76,6 +76,8 @@ class MainWindow(QMainWindow):
         self._worker: Optional[AnalysisWorker] = None
         self._thread_pool = QThreadPool.globalInstance()
         self._entity_map = None   # 최근 해석된 EntityMap (그래프 편집용)
+        self._last_result = None  # 최근 해석 결과 (저장/복원용)
+        self._analyzed_source = ""  # 마지막으로 해석한 소스 (캐시 체크섬 기준)
 
         self.setWindowTitle("FHDL — Fluid Hardware Description Language")
         self.setMinimumSize(QSize(1200, 700))
@@ -227,12 +229,36 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _on_project_opened(self, path: str):
+        from ..core.project_io import load_project
+
         self._project_dir = path
         fhd = os.path.join(path, "main.fhd")
         if os.path.exists(fhd):
             self._editor_panel.load_file(fhd)
         self.setWindowTitle(f"FHDL — {Path(path).name}")
-        self._set_state(AppState.IDLE, f"프로젝트 열림: {path}")
+
+        # 캐시(state.db) 가 현재 소스와 일치하면 결과를 재계산 없이 복원
+        loaded = load_project(path)
+        if loaded.cache_valid and loaded.result is not None:
+            self._restore_result(loaded.result)
+            self._set_state(AppState.SOLVED, f"프로젝트 열림(결과 복원): {Path(path).name}")
+        else:
+            self._results_panel.clear()
+            self._diag_panel.clear()
+            self._viewer_panel.clear()
+            msg = "프로젝트 열림 — 코드 변경됨, 재해석 필요" if os.path.exists(
+                os.path.join(path, "state.db")) else f"프로젝트 열림: {Path(path).name}"
+            self._set_state(AppState.IDLE, msg)
+
+    def _restore_result(self, r):
+        """재계산 없이 state.db 캐시 결과로 패널을 복원한다."""
+        self._last_result = r
+        self._analyzed_source = self._editor_panel.get_source()
+        self._entity_map = r.entity_map
+        self._diag_panel.update_diagnostics(r.diagnostics)
+        self._results_panel.update_result(r)
+        if r.entity_map:
+            self._viewer_panel.update_from_result(r)
 
     def _on_text_changed(self, text: str):
         if self._state not in (AppState.VALIDATING, AppState.SOLVING):
@@ -386,10 +412,12 @@ class MainWindow(QMainWindow):
     def _save(self, _path: str = ""):
         if not self._project_dir:
             return
-        fhd = os.path.join(self._project_dir, "main.fhd")
+        from ..core.project_io import save_project
         self._set_state(AppState.SAVING)
         try:
-            self._editor_panel.save_file(fhd)
+            # main.fhd 원자적 저장 + project.fhproj 갱신 + (있으면)결과 캐시
+            save_project(self._project_dir, self._editor_panel.get_source(),
+                         result=self._last_result, name=Path(self._project_dir).name)
             self._set_state(AppState.SAVED, "저장 완료")
         except Exception as e:
             self._set_state(AppState.DIRTY, f"저장 실패: {e}")
@@ -406,6 +434,7 @@ class MainWindow(QMainWindow):
         if not source.strip():
             self._set_state(AppState.VALIDATION_FAILED, "빈 코드입니다.")
             return
+        self._analyzed_source = source   # 캐시 체크섬 기준
 
         output_dir = os.path.join(self._project_dir or ".", "outputs") if self._project_dir else "outputs"
         os.makedirs(output_dir, exist_ok=True)
@@ -453,12 +482,18 @@ class MainWindow(QMainWindow):
 
         # 토폴로지 뷰어 업데이트
         self._entity_map = r.entity_map
+        self._last_result = r
         if r.entity_map:
             self._viewer_panel.update_from_result(r)
 
-        # DB 저장
+        # 결과 캐시 저장 (state.db) — main.fhd 는 보존(명시적 저장 시에만 기록)
         if self._project_dir:
-            self._save_to_db(r)
+            try:
+                from ..core.project_io import save_project
+                save_project(self._project_dir, self._analyzed_source, r,
+                             write_fhd=False)
+            except Exception:
+                pass
 
         err_cnt = len(r.errors)
         wrn_cnt = len(r.warnings)
@@ -468,16 +503,6 @@ class MainWindow(QMainWindow):
 
     def _on_analysis_error(self, err: str):
         self._set_state(AppState.CALC_FAILED, f"내부 오류: {err}")
-
-    def _save_to_db(self, result):
-        try:
-            db_path = os.path.join(self._project_dir, "state.db")
-            from ..db.project_db import ProjectDB
-            db = ProjectDB(db_path)
-            db.save_analysis_result(result)
-            db.close()
-        except Exception:
-            pass
 
     # ------------------------------------------------------------------
     # 테마

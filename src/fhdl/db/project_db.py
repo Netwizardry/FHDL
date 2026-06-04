@@ -242,5 +242,72 @@ class ProjectDB:
             ).fetchall()
         return [dict(r) for r in rows]
 
+    # ------------------------------------------------------------------
+    # 결과 복원 (state.db → 모델)
+    # ------------------------------------------------------------------
+
+    def get_node_results(self) -> List[NodeCalcResult]:
+        rows = self._conn.execute("SELECT * FROM nodes_result").fetchall()
+        out = []
+        for r in rows:
+            out.append(NodeCalcResult(
+                node_id=r["node_id"], node_type=r["type"],
+                x=r["x"], y=r["y"], z=r["z"],
+                head_total=r["head_total"], p_gauge=r["p_gauge"],
+                flow_in=r["flow_req"], flow_out=r["flow_actual"],
+                npsha=r["npsha"], abs_altitude=r["abs_altitude"],
+                atm_pressure=r["atm_pressure"], sizing_mode=r["sizing_mode"],
+                provenance_formula=r["provenance_formula"],
+            ))
+        return out
+
+    def get_pipe_results(self) -> List[PipeCalcResult]:
+        rows = self._conn.execute("SELECT * FROM pipes_result").fetchall()
+        out = []
+        for r in rows:
+            out.append(PipeCalcResult(
+                pipe_id=r["pipe_id"], start_id=r["start_node"], end_id=r["end_node"],
+                flow=r["flow"], velocity=r["velocity"],
+                h_loss_f=r["h_loss_total"], h_loss_k=0.0,  # DB는 합만 저장
+                diameter=r["diameter"], sizing_mode=r["sizing_mode"],
+                surge_index=r["surge_index"], formula_id=r["formula_id"],
+                status=r["status"], k_total=r["k_total"], k_auto=r["k_auto"],
+            ))
+        return out
+
+    def load_result(self, entity_map=None) -> "AnalysisResult":
+        """state.db 의 캐시를 AnalysisResult 로 복원한다 (재계산 없음)."""
+        from ..core.models import (
+            AnalysisResult, SystemSummary, DiagnosticItem, SourceSpan, EntityMap,
+        )
+        result = AnalysisResult()
+        result.entity_map = entity_map or EntityMap()
+        result.node_results = self.get_node_results()
+        result.pipe_results = self.get_pipe_results()
+
+        srow = self.get_last_summary()
+        if srow:
+            summ = SystemSummary()
+            summ.total_flow = srow.get("total_flow", 0.0)
+            summ.required_head = srow.get("total_head", 0.0)
+            summ.recommended_pump_flow = srow.get("pump_flow", 0.0)
+            summ.recommended_pump_head = srow.get("pump_head", 0.0)
+            summ.recommended_tank_volume = srow.get("tank_volume", 0.0)
+            try:
+                summ.worst_path = json.loads(srow.get("worst_path") or "[]")
+            except (json.JSONDecodeError, TypeError):
+                summ.worst_path = []
+            result.summary = summ
+            result.status = srow.get("status", "OK")
+
+        for d in self.get_diagnostics():
+            result.diagnostics.append(DiagnosticItem(
+                code=d["code"], severity=d["severity"], message=d["message"],
+                source_span=SourceSpan(line=d.get("source_line", 0),
+                                       col=d.get("source_col", 0)),
+                related_id=d.get("related_id", ""),
+            ))
+        return result
+
     def close(self):
         self._conn.close()
