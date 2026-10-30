@@ -65,14 +65,33 @@ CREATE TABLE IF NOT EXISTS fluid_properties (
 );
 """
 
-# KS 표준 관경 기초 데이터 (nominal, inner_m)
-_KS_SIZES = [
-    ("15A",  0.01270), ("20A",  0.01590), ("25A",  0.02110),
-    ("32A",  0.02670), ("40A",  0.03520), ("50A",  0.04220),
-    ("65A",  0.05280), ("80A",  0.06860), ("100A", 0.08250),
-    ("125A", 0.10230), ("150A", 0.12630), ("200A", 0.15030),
-    ("250A", 0.20270), ("300A", 0.25270),
+# KS 관경 단일 진실원은 core.pipe_sizes.KS_PIPE_SIZES 이다 (nominal, inner_m).
+from ..core.pipe_sizes import KS_PIPE_SIZES as _CORE_KS
+
+_KS_SIZES = [(f"{s.nominal_a}A", s.inner_d_m) for s in _CORE_KS]
+
+# 이전 시드(호칭과 내경이 한 칸 어긋남 — 15A 에 10A 내경). 이 값 그대로면 _seed_data 가 교체한다.
+_LEGACY_KS = {
+    "15A": 0.01270, "20A": 0.01590, "25A": 0.02110, "32A": 0.02670, "40A": 0.03520, "50A": 0.04220,
+    "65A": 0.05280, "80A": 0.06860, "100A": 0.08250, "125A": 0.10230, "150A": 0.12630, "200A": 0.15030,
+    "250A": 0.20270, "300A": 0.25270,
+}
+
+# 다른 관경 표준 (호칭, 외경 mm, 두께 mm) — 내경 = 외경 − 2·두께. 사용자가 라이브러리에서 고칠 수 있다.
+# JIS G 3452 SGP (배관용 탄소강관)
+_JIS_SGP = [
+    ("15A", 21.7, 2.8), ("20A", 27.2, 2.8), ("25A", 34.0, 3.2), ("32A", 42.7, 3.5), ("40A", 48.6, 3.5),
+    ("50A", 60.5, 3.8), ("65A", 76.3, 4.2), ("80A", 89.1, 4.2), ("100A", 114.3, 4.5), ("125A", 139.8, 4.5),
+    ("150A", 165.2, 5.0), ("200A", 216.3, 5.8), ("250A", 267.4, 6.6), ("300A", 318.5, 6.9),
 ]
+# ASME B36.10M Schedule 40
+_ANSI_SCH40 = [
+    ('1/2"', 21.34, 2.77), ('3/4"', 26.67, 2.87), ('1"', 33.40, 3.38), ('1-1/4"', 42.16, 3.56),
+    ('1-1/2"', 48.26, 3.68), ('2"', 60.33, 3.91), ('2-1/2"', 73.03, 5.16), ('3"', 88.90, 5.49),
+    ('4"', 114.30, 6.02), ('5"', 141.30, 6.55), ('6"', 168.28, 7.11), ('8"', 219.08, 8.18),
+    ('10"', 273.05, 9.27), ('12"', 323.85, 10.31),
+]
+_OTHER_STANDARDS = {"JIS": _JIS_SGP, "ANSI": _ANSI_SCH40}
 
 # 재질 물성 단일 진실원은 core.materials.MATERIALS 이다 (중복 정의 방지).
 from ..core.materials import seed_rows as _material_seed_rows
@@ -86,6 +105,15 @@ from ..core.fittings import FITTINGS as _CORE_FITTINGS
 _FITTINGS = [
     (name, "all", k, desc) for name, (k, desc) in _CORE_FITTINGS.items()
 ]
+
+
+def default_library_path() -> str:
+    """전역 라이브러리 위치 — 환경변수 FHDL_LIBRARY, 없으면 설치 폴더의 data/library.db (작업 폴더와 무관)."""
+    import os
+    env = os.environ.get("FHDL_LIBRARY")
+    if env:
+        return env
+    return str(Path(__file__).resolve().parents[3] / "data" / "library.db")
 
 
 class LibraryDB:
@@ -105,12 +133,23 @@ class LibraryDB:
 
     def _seed_data(self):
         cur = self._conn
-        # 관경 (없을 때만)
-        if cur.execute("SELECT COUNT(*) FROM pipe_sizes").fetchone()[0] == 0:
+        # 관경 (표준별로 없을 때만). 이전의 어긋난 KS 시드는 정본으로 교체.
+        ks = {r[0]: r[1] for r in cur.execute(
+            "SELECT nominal_size, inner_diameter FROM pipe_sizes WHERE standard='KS'").fetchall()}
+        if ks and ks == _LEGACY_KS:
+            cur.execute("DELETE FROM pipe_sizes WHERE standard='KS'")
+            ks = {}
+        if not ks:
             cur.executemany(
                 "INSERT OR IGNORE INTO pipe_sizes(standard,nominal_size,inner_diameter) VALUES(?,?,?)",
                 [("KS", nm, d) for nm, d in _KS_SIZES],
             )
+        for std, rows in _OTHER_STANDARDS.items():
+            if cur.execute("SELECT COUNT(*) FROM pipe_sizes WHERE standard=?", (std,)).fetchone()[0] == 0:
+                cur.executemany(
+                    "INSERT OR IGNORE INTO pipe_sizes(standard,nominal_size,inner_diameter,outer_diameter,"
+                    "wall_thickness) VALUES(?,?,?,?,?)",
+                    [(std, nm, (od - 2 * t) / 1000.0, od / 1000.0, t / 1000.0) for nm, od, t in rows])
         # 재질
         if cur.execute("SELECT COUNT(*) FROM pipe_materials").fetchone()[0] == 0:
             cur.executemany(
@@ -173,6 +212,15 @@ class LibraryDB:
             (key, nominal_size),
         ).fetchone()
         return row["k_factor"] if row else 1.0
+
+    def find_fitting_k(self, fitting_type: str, nominal_size: str = "all") -> Optional[float]:
+        """라이브러리에 있는 부속 K (없으면 None — get_fitting_k 와 달리 기본값을 지어내지 않는다)."""
+        from ..core.fittings import _canonical
+        key = _canonical(fitting_type) or fitting_type
+        row = self._conn.execute(
+            "SELECT k_factor FROM fitting_kfactors WHERE fitting_type=? AND (nominal_size=? OR nominal_size='all') "
+            "ORDER BY nominal_size DESC LIMIT 1", (key, nominal_size)).fetchone()
+        return row["k_factor"] if row else None
 
     def get_pump_curve_points(self, curve_id: str) -> List[Tuple[float, float, float]]:
         rows = self._conn.execute(

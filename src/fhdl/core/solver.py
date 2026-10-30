@@ -83,6 +83,11 @@ class HydraulicSolver:
         self.em = em
         self.fluid = em.fluid
         self.cancel_fn = cancel_fn
+        self._diameters = list(em.constraints.diameters) or list(_KS_DIAMETERS_M)
+        self.cancelled = False
+        self.converged = True        # 반복 계산을 돌리지 않는 경로(빈 망 등)는 수렴으로 본다
+        self.iterations = 0
+        self.residual = 0.0
         self._diags: List[DiagnosticItem] = []
         self._pump_suction: Dict[str, float] = {}
         self._pipe_lookup: Optional[Dict] = None
@@ -487,7 +492,7 @@ class HydraulicSolver:
                     pipe.diameter.value = d
                     pipe.diameter.mode = "AUTO"
                 else:
-                    pipe.diameter.value = _KS_DIAMETERS_M[2]  # 기본 최소값
+                    pipe.diameter.value = self._diameters[min(2, len(self._diameters) - 1)]  # 기본 최소값
                     pipe.diameter.mode = "AUTO"
 
         return demand, pipe_q
@@ -495,7 +500,7 @@ class HydraulicSolver:
     def _select_diameter(self, q: float) -> float:
         """유속 제약(v_max)을 만족하는 최소 표준 관경 선정"""
         v_max = self.em.constraints.velocity_max
-        for d in _KS_DIAMETERS_M:
+        for d in self._diameters:
             A = math.pi * (d / 2) ** 2
             v = q / max(A, 1e-12)
             if v <= v_max:
@@ -505,7 +510,7 @@ class HydraulicSolver:
                   f"요구 유량 {q*1e6:.1f} L/s 에 대해 유속 제약({v_max}m/s)을 만족하는 표준 관경이 없습니다.",
                   SourceSpan(),
                   "velocity_max 제한을 완화하거나 요구 유량을 줄이세요.")
-        return _KS_DIAMETERS_M[-1]
+        return self._diameters[-1]
 
     # ------------------------------------------------------------------
     # Pass 2: Newton-Raphson 수압 평형
@@ -537,8 +542,11 @@ class HydraulicSolver:
         damping = 0.5
         converged = False
 
+        delta_max = 0.0
+        iteration = -1
         for iteration in range(max_iter):
             if self.cancel_fn and self.cancel_fn():
+                self.cancelled = True
                 break
 
             delta_max = 0.0
@@ -596,7 +604,13 @@ class HydraulicSolver:
                 converged = True
                 break
 
-        if not converged:
+        self.converged = converged
+        self.iterations = iteration + 1
+        self.residual = delta_max
+        if self.cancelled:
+            self._err("CAL004", "사용자가 해석을 중단했습니다 — 결과는 유효하지 않습니다.", SourceSpan(),
+                      "다시 해석(F5)하세요.")
+        elif not converged:
             self._err("CAL002",
                       f"Newton-Raphson 수압 평형이 {max_iter}회 반복 후 수렴하지 않았습니다.",
                       SourceSpan(),
@@ -691,8 +705,8 @@ class HydraulicSolver:
                            "관경을 줄이세요.")
 
             # 수충격 위험 지수
-            wave_v = 1200.0  # 기본 압력파 속도 (m/s)
-            p_allow = 2.0e6  # 기본 허용 압력 (Pa)
+            wave_v = pipe.wave_velocity      # 재질별 압력파 속도 (m/s, 라이브러리·재질 표)
+            p_allow = pipe.max_pressure      # 재질별 허용 압력 (Pa)
             surge_idx = (self._rho * wave_v * v) / max(p_allow, 1.0)
             if surge_idx > 0.8:
                 self._warn("WRN004",
@@ -715,6 +729,7 @@ class HydraulicSolver:
                 status=status,
                 k_total=pipe.total_k,
                 k_auto=pipe.auto_k,
+                length=pipe.length,
             ))
 
         return node_results, pipe_results
@@ -784,14 +799,24 @@ class HydraulicSolver:
 
         # 탱크 용량 (총유량 × 1시간)
         summary.recommended_tank_volume = total_q * 3600.0
-        summary.converged = True
+        summary.converged = self.converged and not self.cancelled
+        summary.solve_iterations = self.iterations
+        summary.residual = self.residual
 
         # Provenance map
+        assumed = {}
+        for (what, val), ids in self.em.defaults_applied.items():
+            for i in ids:
+                assumed.setdefault(i, []).append(f"{what}: {val}")
         for pr in pipe_results:
+            pipe = self.em.pipes.get(pr.pipe_id)
             summary.provenance_map[pr.pipe_id] = {
                 "formula_id": pr.formula_id,
                 "diameter_mode": pr.sizing_mode,
                 "flow_m3s": pr.flow,
+                "source_line": pipe.span.line if pipe else 0,
+                "inputs": [pr.start_id, pr.end_id],
+                "assumptions": assumed.get(pr.pipe_id, []),
             }
 
         # AUTO 펌프(양정 미정·커브 없음) 하류 노드: 양정이 0 으로 주입된 사양 선정 전 상태라
@@ -807,14 +832,21 @@ class HydraulicSolver:
                     stack.append(p.end_id)
 
         # 진공 한계 경고 — 노드 실제 해발의 대기압 기준(절대압 0 이하면 진공)
+        # 계산 압력이 증기압(절대) 아래면 물리적으로 불가능 → 표시값은 증기압 한계로 묶는다(S-SOL-007).
+        pv = self.fluid.vapor_pressure
         for nr in node_results:
+            floor = -self._atm_pa_at(nr.node_id) + pv
+            raw = nr.p_gauge
+            if raw < floor:
+                nr.p_gauge = floor
             if nr.node_id in sized_later:
                 continue
-            if nr.p_gauge <= -self._atm_pa_at(nr.node_id):
+            if raw <= -self._atm_pa_at(nr.node_id) + pv:
                 self._warn("WRN005",
-                           f"노드 '{nr.node_id}': 압력이 진공 한계({nr.p_gauge:.0f}Pa)에 도달했습니다.",
+                           f"노드 '{nr.node_id}': 계산 압력 {raw / 1e3:.0f} kPa(게이지)가 진공(증기압) 한계 "
+                           f"{floor / 1e3:.1f} kPa 아래입니다 — 표시값은 한계로 제한했습니다.",
                            SourceSpan(),
-                           "극단적인 부압 원인을 확인하세요.")
+                           "흡입 높이·관경·펌프 위치 등 극단적인 부압 원인을 확인하세요.")
 
         # 말단 요구압 미달 — 채울 펌프가 없으므로 실제 설계 결함이다.
         p_by_node = {nr.node_id: nr.p_gauge for nr in node_results}

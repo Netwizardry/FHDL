@@ -1,0 +1,779 @@
+{
+ "ruleset": "kec_lv",
+ "title": "KEC 저압설비 — EHDL Phase 1 사용 규칙",
+ "version": "KEC 2021 (산업통상자원부 공고 제2021-509호, 2022.01.01 시행) · KS C IEC 60364-5-52(2012) · 전기설비 검사·점검 기준(2022.1.1 시행)",
+ "note": "각 규칙의 citations 는 archive/EHDL-Docs 원문(지식 DB: python -m ehdl.kb.build)의 조항·인쇄 쪽이다. verified=true 는 원문과 대조 확인된 값, false 는 제공 자료에서 근거를 찾지 못한 값이며 그 규칙을 쓰는 판정은 PASS 대신 REVIEW 로 표시된다.",
+ "rules": {
+  "VD_LIMIT": {
+   "title": "수용가 설비의 전압강하 허용치",
+   "source": "KEC",
+   "clause": "232.3.9 표 232.3-1",
+   "verified": true,
+   "citations": [
+    {
+     "doc": "KEC",
+     "ref": "232.3.9 수용가 설비에서의 전압강하, 표 232.3-1",
+     "page": "137"
+    },
+    {
+     "doc": "IEC60364-5-52",
+     "ref": "부속서 G 표 G.52.1",
+     "page": "590"
+    }
+   ],
+   "values": {
+    "lv_supply": {
+     "lighting": 3.0,
+     "other": 5.0
+    },
+    "own_substation": {
+     "lighting": 6.0,
+     "other": 8.0
+    },
+    "over_100m_per_m": 0.005,
+    "over_100m_max_extra": 0.5
+   },
+   "unit": "%",
+   "explain": "수용가 설비의 인입구에서 기기까지: A 저압 수전 조명 3%·기타 5%, B 고압 이상 수전 조명 6%·기타 8%. 배선이 100 m 를 넘는 부분은 1 m 당 0.005% 증가할 수 있으나 증가분은 0.5% 이하. 기동 중 전동기·돌입전류가 큰 기기는 더 큰 강하 허용(KEC 232.3.9의 2)."
+  },
+  "OVERLOAD_COORD": {
+   "title": "도체와 과부하 보호장치 사이의 협조",
+   "source": "KEC",
+   "clause": "212.4.1 식 212.4-1·212.4-2",
+   "verified": true,
+   "citations": [
+    {
+     "doc": "KEC",
+     "ref": "212.4.1 도체와 과부하 보호장치 사이의 협조",
+     "page": "86"
+    },
+    {
+     "doc": "KEC",
+     "ref": "표 212.3-2(산업용 동작전류 1.3배)·표 212.3-4(주택용 1.45배)",
+     "page": "86"
+    }
+   ],
+   "values": {
+    "I2_over_Iz_max": 1.45,
+    "I2_factor": {
+     "IEC60898": 1.45,
+     "IEC60947-2": 1.3
+    }
+   },
+   "unit": "",
+   "explain": "IB ≤ In ≤ IZ (식 212.4-1), I2 ≤ 1.45 × IZ (식 212.4-2). IB 설계전류, IZ 케이블 허용전류, In 보호장치 정격전류, I2 규약시간 내 유효 동작 보장 전류. I2 = 동작전류: 주택용(KS C IEC 60898) 1.45 In, 산업용(KS C IEC 60947-2) 1.3 In (표 212.3-4·212.3-2)."
+  },
+  "CONDUCTOR_TEMP": {
+   "title": "절연물의 종류에 대한 최고허용온도",
+   "source": "KEC",
+   "clause": "232.5.1 표 232.5-1",
+   "verified": true,
+   "citations": [
+    {
+     "doc": "KEC",
+     "ref": "232.5.1 절연물의 허용온도, 표 232.5-1",
+     "page": "142"
+    }
+   ],
+   "values": {
+    "PVC": 70.0,
+    "XLPE": 90.0,
+    "EPR": 90.0
+   },
+   "unit": "°C",
+   "explain": "도체 최고허용온도: PVC 70℃, XLPE·EPR 90℃ (KS C IEC 60364-5-52 부속서 B 허용전류의 기초)."
+  },
+  "RESISTIVITY_SERVICE": {
+   "title": "통상 사용 온도의 도체 저항률 ρ1",
+   "source": "KS C IEC 60364-5-52",
+   "clause": "부속서 G (전압강하 계산식)",
+   "verified": true,
+   "citations": [
+    {
+     "doc": "IEC60364-5-52",
+     "ref": "부속서 G 전압강하 계산식의 ρ1",
+     "page": "591"
+    }
+   ],
+   "values": {
+    "Cu": 0.0225,
+    "Al": 0.036
+   },
+   "unit": "Ω·mm²/m",
+   "explain": "ρ1 = 20℃ 저항률의 1.25배 (구리 0.0225, 알루미늄 0.036 Ω·mm²/m)."
+  },
+  "REACTANCE_DEFAULT": {
+   "title": "도체 단위길이당 리액턴스 λ (상세 미상 시)",
+   "source": "KS C IEC 60364-5-52",
+   "clause": "부속서 G (전압강하 계산식)",
+   "verified": true,
+   "citations": [
+    {
+     "doc": "IEC60364-5-52",
+     "ref": "부속서 G 전압강하 계산식의 λ",
+     "page": "591"
+    }
+   ],
+   "values": {
+    "x_ohm_per_m": 8e-05
+   },
+   "unit": "Ω/m",
+   "explain": "다른 자세한 사항을 알지 못하면 λ = 0.08 mΩ/m 로 본다 — 기준이 정한 기본값이므로 추정이 아니라 '기준 기본값 적용'으로 표시한다."
+  },
+  "VD_UNBALANCED_AS_1PH": {
+   "title": "불평형 3상 회로의 전압강하 계수",
+   "source": "KEC 시공 가이드북 / LH 설계사례 (KS C IEC 60364-5-52 부속서 G 비고3)",
+   "clause": "전압강하 계산식 b 계수",
+   "verified": true,
+   "citations": [
+    {
+     "doc": "KEC_CONSTR",
+     "ref": "전압강하 계산식 (b 계수)",
+     "page": "24"
+    },
+    {
+     "doc": "LH_CASE",
+     "ref": "전압강하식 (b 계수)",
+     "page": "47"
+    },
+    {
+     "doc": "IEC60364-5-52",
+     "ref": "부속서 G 비고3 (완전 불평형 3상 회로 = 단상 회로)",
+     "page": "591"
+    }
+   ],
+   "values": {
+    "unbalance_pct": 30.0
+   },
+   "unit": "%",
+   "explain": "u = b(ρ1·L/S·cosφ + λ·L·sinφ)·IB, b = 1(3상)·2(단상). 30% 이상의 불평형률(단상부하)을 가지는 3상 회로는 단상 회로로 간주해 b = 2."
+  },
+  "UNBALANCE_1PH": {
+   "title": "단상 부하 설비불평형률 한도",
+   "source": "내선규정 (제공 자료에 없음)",
+   "clause": "확인 필요",
+   "verified": false,
+   "citations": [],
+   "values": {
+    "limit_pct": 30.0
+   },
+   "unit": "%",
+   "explain": "설비불평형률 = (상별 단상 설비용량 최대 − 최소) ÷ (총 설비용량 ÷ 3) × 100. 한도 30% 는 내선규정 값으로 알려져 있으나 archive/EHDL-Docs 9종에서 근거를 찾지 못했다 — 원문 제공 전까지 REVIEW."
+  },
+  "AMPACITY_TABLE": {
+   "title": "배선 허용전류 (기준 설치 조건)",
+   "source": "KS C IEC 60364-5-52",
+   "clause": "부속서 B 표 B.52.2 ~ B.52.5",
+   "verified": true,
+   "citations": [
+    {
+     "doc": "IEC60364-5-52",
+     "ref": "표 B.52.2~B.52.5 (지식 DB ampacity 테이블)",
+     "page": "555-558"
+    }
+   ],
+   "values": {
+    "ambient_air_ref_c": 30.0,
+    "ambient_ground_ref_c": 20.0
+   },
+   "unit": "A",
+   "explain": "공사방법(A1~D2)·절연·부하 도체 수·재질·단면적으로 표의 허용전류를 찾는다. 표 값은 기준 조건(기중 30℃·지중 20℃, 단일 회로) 값 — 그 밖의 주위온도·집합 포설은 보정계수(표 B.52.14~B.52.21)가 필요하다."
+  },
+  "TRIP_INSTANTANEOUS": {
+   "title": "순시트립에 따른 구분 (주택용 배선차단기)",
+   "source": "KEC",
+   "clause": "212.3.4 표 212.3-3",
+   "verified": true,
+   "citations": [
+    {
+     "doc": "KEC",
+     "ref": "표 212.3-3 순시트립에 따른 구분(주택용 배선차단기)",
+     "page": "86"
+    }
+   ],
+   "values": {
+    "B": [
+     3,
+     5
+    ],
+    "C": [
+     5,
+     10
+    ],
+    "D": [
+     10,
+     20
+    ]
+   },
+   "unit": "× In",
+   "explain": "B형 3 In 초과~5 In 이하, C형 5~10 In, D형 10~20 In 에서 순시 트립. 산업용은 제조사 순시 설정값(instantaneous)을 쓴다."
+  },
+  "BREAKING_CAPACITY": {
+   "title": "단락보호장치의 차단용량",
+   "source": "KEC",
+   "clause": "212.5.5의 1",
+   "verified": true,
+   "citations": [
+    {
+     "doc": "KEC",
+     "ref": "212.5.5 단락보호장치의 특성 1. 차단용량",
+     "page": "92"
+    }
+   ],
+   "values": {},
+   "unit": "A",
+   "explain": "정격차단용량은 설치 점에서 예상되는 최대 단락전류보다 커야 한다. 다만 전원 측에 그 이상의 차단능력을 가진 과전류차단기가 있고 두 장치가 협조되면(후비보호) 예외."
+  },
+  "SC_METHOD": {
+   "title": "단락전류 산출 (최대·최소)",
+   "source": "전기설비 검사·점검 기준",
+   "clause": "220.1.2 (KS C IEC 60909-0)",
+   "verified": true,
+   "citations": [
+    {
+     "doc": "KESC_INSPECT",
+     "ref": "220.1.2 단락전류 산출",
+     "page": "31"
+    },
+    {
+     "doc": "KEC",
+     "ref": "212.5.1 예상 단락전류의 결정",
+     "page": "90"
+    }
+   ],
+   "values": {
+    "max": {
+     "source_impedance": "min",
+     "motors": true,
+     "cable_temp_c": 20.0
+    },
+    "min": {
+     "source_impedance": "max",
+     "motors": false
+    }
+   },
+   "unit": "",
+   "explain": "최대: 전압계수 cmax, 최소 등가 전원 임피던스, 전동기 기여 포함, 선로 저항 20℃. 최소: cmin, 최대 전원 임피던스, 전동기 기여 무시, 선로 저항은 단락 온도한계(표 220-4)에서."
+  },
+  "SC_VOLTAGE_FACTOR": {
+   "title": "전압계수 c",
+   "source": "전기설비 검사·점검 기준",
+   "clause": "표 220-3",
+   "verified": true,
+   "citations": [
+    {
+     "doc": "KESC_INSPECT",
+     "ref": "표 220-3 전압계수(c)",
+     "page": "32"
+    }
+   ],
+   "values": {
+    "lv": {
+     "cmax_6pct": 1.05,
+     "cmax_10pct": 1.1,
+     "cmin": 0.95
+    },
+    "mv": {
+     "cmax": 1.1,
+     "cmin": 1.0
+    }
+   },
+   "unit": "",
+   "explain": "100 V~1 kV: cmax 1.05(허용차 +6%, 예: 380~400 V 계통) / 1.10(+10%), cmin 0.95. 1 kV 초과: cmax 1.1, cmin 1.0."
+  },
+  "SC_TEMP_LIMIT": {
+   "title": "절연재료별 단락회로 온도한계",
+   "source": "전기설비 검사·점검 기준",
+   "clause": "표 220-4",
+   "verified": true,
+   "citations": [
+    {
+     "doc": "KESC_INSPECT",
+     "ref": "표 220-4 절연재료 종류에 따른 단락회로 온도 한계",
+     "page": "32"
+    }
+   ],
+   "values": {
+    "XLPE": 250.0,
+    "EPR": 250.0,
+    "PVC_le300": 160.0,
+    "PVC_gt300": 140.0
+   },
+   "unit": "°C",
+   "explain": "최소 단락전류 계산 시 선로 저항은 이 온도에서의 값을 쓴다."
+  },
+  "SC_RESISTANCE_TEMP": {
+   "title": "도체 저항 온도계수 (단락 계산)",
+   "source": "KS C IEC 60909-0 (원문 미제공)",
+   "clause": "선로 저항 온도 환산 RL = (1 + 0.004(θe − 20)) RL20",
+   "verified": false,
+   "citations": [],
+   "values": {
+    "alpha": 0.004
+   },
+   "unit": "1/K",
+   "explain": "최소 단락전류용 고온 저항 환산 계수 — IEC 60909-0 값으로 알려져 있으나 제공 자료에 원문이 없어 미확인. 이 값을 쓰는 최소 단락전류 판정은 REVIEW."
+  },
+  "TRANSFORMER_KT": {
+   "title": "변압기 임피던스 보정계수 KT",
+   "source": "KS C IEC 60909-0 (원문 미제공)",
+   "clause": "KT = 0.95·cmax / (1 + 0.6·xT)",
+   "verified": false,
+   "citations": [],
+   "values": {
+    "a": 0.95,
+    "b": 0.6
+   },
+   "unit": "",
+   "explain": "최대 단락전류 계산 시 변압기 임피던스에 곱하는 보정계수 — 제공 자료에 원문 없음(미확인). 이 값을 쓰는 차단용량 판정은 충족이어도 REVIEW."
+  },
+  "K_FACTOR": {
+   "title": "도체에 대한 k 값",
+   "source": "KEC",
+   "clause": "212.5.5 표 212.5-1",
+   "verified": true,
+   "citations": [
+    {
+     "doc": "KEC",
+     "ref": "표 212.5-1 도체에 대한 k 값",
+     "page": "92"
+    },
+    {
+     "doc": "KESC_INSPECT",
+     "ref": "240절 단면적 선정 k 값",
+     "page": "89"
+    }
+   ],
+   "values": {
+    "Cu": {
+     "PVC": 115,
+     "PVC_gt300": 103,
+     "XLPE": 143,
+     "EPR": 143
+    },
+    "Al": {
+     "PVC": 76,
+     "PVC_gt300": 68,
+     "XLPE": 94,
+     "EPR": 94
+    }
+   },
+   "unit": "",
+   "explain": "단락 지속 5초 이하: 허용 시간 t = (k·S / I)² (식 212.5-1)."
+  },
+  "SC_THERMAL": {
+   "title": "단락전류에 의한 도체 온도상승 (열적 내량)",
+   "source": "KEC / 전기설비 검사·점검 기준",
+   "clause": "212.5.5의 2 식 212.5-1 / 240절",
+   "verified": true,
+   "citations": [
+    {
+     "doc": "KEC",
+     "ref": "212.5.5 2. 케이블 등의 단락전류 (식 212.5-1)",
+     "page": "92"
+    },
+    {
+     "doc": "KESC_INSPECT",
+     "ref": "단락고장전류에 의한 도체 온도상승 단면적 S ≥ Is,min·√tn / k × α",
+     "page": "89"
+    }
+   ],
+   "values": {
+    "alpha": 1.25,
+    "t_max": 5.0
+   },
+   "unit": "",
+   "explain": "보호장치 동작시간 tn 동안 S ≥ Is·√tn / k (설계여유 α 1.25 권장). 단락지속 5초 이하에 적용."
+  },
+  "MOTOR_START_VD": {
+   "title": "전동기 기동전류에 따른 전압강하",
+   "source": "전기설비 검사·점검 기준",
+   "clause": "240절 (기동 시 역률 cosθs)",
+   "verified": true,
+   "citations": [
+    {
+     "doc": "KESC_INSPECT",
+     "ref": "전동기 기동전류에 따른 허용전압강하 ε(%) = K·Ims·L(R cosθs + X sinθs)/V × 100",
+     "page": "89"
+    },
+    {
+     "doc": "KEC",
+     "ref": "232.3.9의 2 (기동 시간 중의 전동기는 더 큰 전압강하 허용)",
+     "page": "137"
+    }
+   ],
+   "values": {},
+   "unit": "%",
+   "explain": "기동 중에는 표 232.3-1 보다 큰 전압강하가 허용되며(KEC 232.3.9의 2) 별도 수치 한도는 제공 자료에 없다 — 한도는 system 의 motor_start_vd_limit(기기 요구값)으로 지정하면 판정, 없으면 계산값과 질문(REVIEW)."
+  },
+  "MOTOR_START_PROTECTION": {
+   "title": "전동기 기동 시 차단기 오동작 방지",
+   "source": "KEC 시공 가이드북",
+   "clause": "동력부하 MCCB 선정 (최소동작시간 tb ≈ 1.5·tm, 규약동작배율 δ)",
+   "verified": true,
+   "citations": [
+    {
+     "doc": "KEC_CONSTR",
+     "ref": "MCCB 오동작 방지 — 최소동작시간 tb·규약동작배율 δ",
+     "page": "39"
+    },
+    {
+     "doc": "KEC_CONSTR",
+     "ref": "기동시간 5초 이상·기동전류 8 In 이상 전동기",
+     "page": "37"
+    }
+   ],
+   "values": {
+    "tb_over_tm": 1.5
+   },
+   "unit": "",
+   "explain": "보호장치 최소동작시간 tb 는 전동기 기동시간 tm 의 1.5배 정도. tb 에서 제조사 동작곡선의 동작배율 δ 가 기동전류 배수보다 커야 기동 중 트립하지 않는다(δ 는 제조사별)."
+  },
+  "RCD_SOCKET": {
+   "title": "콘센트 회로의 누전차단기 추가적 보호",
+   "source": "KEC",
+   "clause": "211.2.3의 4 가 / 211.2.4",
+   "verified": true,
+   "citations": [
+    {
+     "doc": "KEC",
+     "ref": "211.2.3 4. 추가적인 보호 — 일반인이 사용하는 정격전류 20 A 이하 콘센트",
+     "page": "67"
+    }
+   ],
+   "values": {
+    "socket_max_a": 20.0
+   },
+   "unit": "A",
+   "explain": "일반적으로 사용되며 일반인이 사용하는 정격전류 20 A 이하 콘센트는 211.2.4 에 따른 누전차단기로 추가적 보호를 해야 한다."
+  },
+  "RCD_SENSITIVITY": {
+   "title": "인체감전보호용 누전차단기 감도",
+   "source": "KEC",
+   "clause": "142 (인체감전보호용: 30 mA 이하·0.03초 이하) — 콘센트 추가보호의 감도 조항은 확인 필요",
+   "verified": false,
+   "citations": [
+    {
+     "doc": "KEC",
+     "ref": "인체감전보호용 누전차단기(정격감도전류 30 mA 이하, 동작시간 0.03초 이하)",
+     "page": "43"
+    }
+   ],
+   "values": {
+    "max_ma": 30.0
+   },
+   "unit": "mA",
+   "explain": "KEC p.43 의 인체감전보호용 누전차단기 정의(30 mA·0.03 s)를 콘센트 추가보호 감도로 쓴다 — 해당 조항의 직접 근거는 미확인이라 충족이어도 REVIEW."
+  },
+  "SPD_SELECTION": {
+   "title": "서지보호장치 시설·선정",
+   "source": "KEC",
+   "clause": "153.1.4",
+   "verified": true,
+   "citations": [
+    {
+     "doc": "KEC",
+     "ref": "153.1.4 서지보호장치 시설",
+     "page": "52"
+    }
+   ],
+   "values": {},
+   "unit": "",
+   "explain": "서지가 유입되는 선로에는 SPD 를 설치하고, 선정은 KS C IEC 61643-12·60364-5-53 에 따른다(제공 자료에 Uc·Up 수치 기준 없음 → 값은 기록·질문만)."
+  },
+  "AMPACITY_CORRECTION": {
+   "title": "허용전류 보정계수",
+   "source": "KS C IEC 60364-5-52",
+   "clause": "부속서 B 표 B.52.14~B.52.18",
+   "verified": true,
+   "citations": [
+    {
+     "doc": "IEC60364-5-52",
+     "ref": "표 B.52.14 기중 주위온도",
+     "page": "567"
+    },
+    {
+     "doc": "IEC60364-5-52",
+     "ref": "표 B.52.15 지중온도 · B.52.16 토양 열저항률",
+     "page": "569"
+    },
+    {
+     "doc": "IEC60364-5-52",
+     "ref": "표 B.52.17 집합 저감",
+     "page": "570"
+    },
+    {
+     "doc": "IEC60364-5-52",
+     "ref": "표 B.52.18 지중 직매 복수회로",
+     "page": "571"
+    }
+   ],
+   "values": {
+    "default_arrangement": "1",
+    "default_spacing": "touch",
+    "soil_ref": 2.5
+   },
+   "unit": "",
+   "explain": "IZ = 표 허용전류 × 주위온도 계수 × 집합 계수 (× 토양 열저항률 계수). 배치 항·간격 미지정 시 가장 보수적인 값(항 1 묶음·케이블 접촉)을 추정으로 적용."
+  },
+  "ADS_TN": {
+   "title": "TN 계통 고장보호 (전원 자동차단)",
+   "source": "KEC",
+   "clause": "211.2.5의 6",
+   "verified": true,
+   "citations": [
+    {
+     "doc": "KEC",
+     "ref": "211.2.5 TN 계통 6. Zs × Ia ≤ U0",
+     "page": "69"
+    }
+   ],
+   "values": {},
+   "unit": "",
+   "explain": "Zs × Ia ≤ U0. Zs = 전원 + 고장점까지의 선도체 + 고장점과 전원 사이 보호도체 임피던스, Ia = 표 211.2-1 시간 내 동작 전류."
+  },
+  "TNC_NO_RCD": {
+   "title": "TN-C 계통의 누전차단기 금지",
+   "source": "KEC",
+   "clause": "211.2.5의 8",
+   "verified": true,
+   "citations": [
+    {
+     "doc": "KEC",
+     "ref": "211.2.5 8. TN-C 계통에는 누전차단기를 사용해서는 아니 된다",
+     "page": "70"
+    }
+   ],
+   "values": {},
+   "unit": "",
+   "explain": "TN-C 계통에는 누전차단기를 쓰지 않는다. TN-C-S 에서는 누전차단기 부하측에 PEN 도체를 쓸 수 없다."
+  },
+  "ADS_TT": {
+   "title": "TT 계통 고장보호",
+   "source": "KEC",
+   "clause": "211.2.6의 2~4",
+   "verified": true,
+   "citations": [
+    {
+     "doc": "KEC",
+     "ref": "211.2.6 TT 계통 — RA × IΔn ≤ 50 V, 과전류보호장치는 Zs × Ia ≤ U0",
+     "page": "70"
+    }
+   ],
+   "values": {
+    "touch_v": 50.0
+   },
+   "unit": "V",
+   "explain": "TT 는 누전차단기로 고장보호(RA × IΔn ≤ 50 V). 고장루프임피던스가 충분히 낮을 때만 과전류보호장치(Zs × Ia ≤ U0)."
+  },
+  "ADS_IT": {
+   "title": "IT 계통 1차 고장",
+   "source": "KEC",
+   "clause": "211.2.7의 2",
+   "verified": true,
+   "citations": [
+    {
+     "doc": "KEC",
+     "ref": "211.2.7 IT 계통 2. 교류 RA × Id ≤ 50 V",
+     "page": "71"
+    }
+   ],
+   "values": {
+    "touch_v": 50.0
+   },
+   "unit": "V",
+   "explain": "1차 고장 시 자동차단은 절대 요구가 아니나 RA × Id ≤ 50 V(교류). 절연감시장치 등으로 1차 고장을 알린다."
+  },
+  "DISCONNECT_TIME": {
+   "title": "최대 차단시간",
+   "source": "KEC",
+   "clause": "표 211.2-1 · 211.2.3의 3 다·라",
+   "verified": true,
+   "citations": [
+    {
+     "doc": "KEC",
+     "ref": "표 211.2-1 32 A 이하 분기회로의 최대 차단시간",
+     "page": "67"
+    }
+   ],
+   "values": {
+    "final": {
+     "TN": [
+      [
+       120,
+       0.8
+      ],
+      [
+       230,
+       0.4
+      ],
+      [
+       400,
+       0.2
+      ],
+      [
+       1000000000.0,
+       0.1
+      ]
+     ],
+     "TT": [
+      [
+       120,
+       0.3
+      ],
+      [
+       230,
+       0.2
+      ],
+      [
+       400,
+       0.07
+      ],
+      [
+       1000000000.0,
+       0.04
+      ]
+     ]
+    },
+    "distribution": {
+     "TN": 5.0,
+     "TT": 1.0
+    }
+   },
+   "unit": "s",
+   "explain": "32 A 이하 분기회로(교류): TN 50<U0≤120 V 0.8 s, ≤230 V 0.4 s, ≤400 V 0.2 s, 초과 0.1 s / TT 0.3·0.2·0.07·0.04 s. 배전회로(간선)는 TN 5 s, TT 1 s 이하."
+  },
+  "PE_MIN_SIZE": {
+   "title": "보호도체의 최소 단면적",
+   "source": "KEC",
+   "clause": "142.3.2 표 142.3-1",
+   "verified": true,
+   "citations": [
+    {
+     "doc": "KEC",
+     "ref": "142.3.2 보호도체, 표 142.3-1",
+     "page": "35"
+    }
+   ],
+   "values": {
+    "separate_cu_protected": 2.5,
+    "separate_cu_unprotected": 4.0,
+    "separate_al": 16.0
+   },
+   "unit": "mm²",
+   "explain": "선도체 S ≤ 16 ㎟ → S, 16 < S ≤ 35 → 16, S > 35 → S/2 (같은 재질). 케이블 밖 별도 PE 는 구리 2.5 ㎟(기계적 보호)·4 ㎟ 이상."
+  },
+  "BONDING_MAIN": {
+   "title": "보호등전위본딩 도체",
+   "source": "KEC",
+   "clause": "143.3.1",
+   "verified": true,
+   "citations": [
+    {
+     "doc": "KEC",
+     "ref": "143.3.1 보호등전위본딩 도체",
+     "page": "44"
+    }
+   ],
+   "values": {
+    "min": {
+     "Cu": 6.0,
+     "Al": 16.0,
+     "Fe": 50.0
+    },
+    "cap_cu": 25.0
+   },
+   "unit": "mm²",
+   "explain": "주접지단자 등전위본딩 도체는 설비 내 가장 큰 보호접지도체의 1/2 이상이고 구리 6·알루미늄 16·강철 50 ㎟ 이상, 구리 25 ㎟ 를 넘을 필요는 없다."
+  },
+  "TX_CAPACITY": {
+   "title": "변압기 용량 산정 (수용률·부등률)",
+   "source": "전기설비 검사·점검 기준",
+   "clause": "230.4.3 식 230-4·230-6",
+   "verified": true,
+   "citations": [
+    {
+     "doc": "KESC_INSPECT",
+     "ref": "230.4.3 변압기 용량산정 — 수용률·부등률·여유율",
+     "page": "64"
+    },
+    {
+     "doc": "KESC_INSPECT",
+     "ref": "식 230-6 변압기용량 = 부하설비용량×수용률 ÷ 부등률",
+     "page": "66"
+    }
+   ],
+   "values": {},
+   "unit": "kVA",
+   "explain": "수용률 = 최대수요전력 ÷ 설비용량(1.0 이하), 부등률 = 각 부하 최대수요전력 합 ÷ 합성 최대수요전력(1.0 초과, 2단 강하 주변압기만), 변압기 용량 ≥ 수요전력 × 여유율."
+  },
+  "CONTRACT_POWER": {
+   "title": "계약전력",
+   "source": "한전 기본공급약관 (원문 미제공)",
+   "clause": "계약전력 산정",
+   "verified": false,
+   "citations": [],
+   "values": {},
+   "unit": "kW",
+   "explain": "계약전력·최대수요전력·변압기 정격은 서로 다른 값(SPEC 5.12). 계약전력 산정 기준은 제공 자료에 없어 최대수요전력과의 단순 비교만 — 충족이어도 REVIEW."
+  },
+  "START_METHOD": {
+   "title": "기동 방식별 기동전류",
+   "source": "전기설비 검사·점검 기준",
+   "clause": "240.3.1 과부하보호장치 정격전류 (기동방식 계수 C, 소프트스타터·인버터 전류제한 비율)",
+   "verified": true,
+   "citations": [
+    {
+     "doc": "KESC_INSPECT",
+     "ref": "240.3.1 — 기동방식 전전압 C 1.0 · Y-△ 0.33 · 리액터 Tap값, Soft Starter 3.5∼5 · Inverter 기동 1∼2.0 (기동방식 전류제한 비율)",
+     "page": "90"
+    }
+   ],
+   "values": {
+    "C": {
+     "dol": 1.0,
+     "star_delta": 0.33
+    },
+    "limit_range": {
+     "soft_starter": [
+      3.5,
+      5.0
+     ],
+     "inverter": [
+      1.0,
+      2.0
+     ]
+    }
+   },
+   "unit": "",
+   "explain": "기동전류 = 계수 C × 전전압 기동배율 β × 정격전류 (전전압 1.0, Y-△ 0.33, 리액터 = Tap값). 소프트스타터·인버터는 기동방식 전류제한 비율 × 정격전류 — 원문 범위(3.5∼5, 1∼2.0)는 참고이며 값은 설정값(start_limit)을 입력받는다."
+  },
+  "RCD_TYPES": {
+   "title": "누전차단기 동작 형별 동작시간",
+   "source": "KEC 적용에 따른 검사기준 변화",
+   "clause": "누전차단기 동작시간 — 고속형·시연형·반한시형 (PDF 31쪽 표)",
+   "verified": true,
+   "citations": [
+    {
+     "doc": "KESCO_CHANGE",
+     "ref": "고속형 IΔn 에서 0.1초 이내(인체 감전보호용 0.03초 이내) · 시연형 0.1초 초과 2초 이내 · 반한시형 0.2초 초과 1초 이내",
+     "page": "C"
+    }
+   ],
+   "values": {
+    "max_time": {
+     "fast": 0.1,
+     "delayed": 2.0,
+     "inverse": 1.0
+    },
+    "min_time": {
+     "fast": 0.0,
+     "delayed": 0.1,
+     "inverse": 0.2
+    }
+   },
+   "unit": "s",
+   "explain": "누전차단기를 직렬로 둘 때 상위가 고속형이면 하위 고장에서 함께 동작할 수 있다 — 상위 시연형(최소 0.1초 초과)이면 하위 고속형(0.1초 이내)과 시간으로 나뉜다. 선택차단 요건 조항 자체는 제공 자료에서 찾지 못해 판정은 REVIEW/PASS 가 아니라 근거 표시용(시간 관계)으로 쓴다."
+  }
+ }
+}

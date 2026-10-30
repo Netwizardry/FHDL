@@ -29,6 +29,7 @@ HELP_TEXT = [
     "  ls                                                       노드/배관 목록",
     "  dwg <iso|plan|elevation|pid>                             도면 탭에서 해당 도면 보기",
     "  dwg export <파일.pdf|dxf|svg|png|step> [views=iso,plan]  도면 내보내기 (pdf/dxf 기본 전체)",
+    "  report <파일.pdf|html>                                   수리 계산 보고서 (최근 해석 결과)",
     "  run | save | clear | help                                해석/저장/로그지우기/도움말",
 ]
 
@@ -138,9 +139,15 @@ def execute_command(source: str, command: str, entity_map=None) -> CommandResult
 
     if verb in ("constraint", "constr"):
         if not kv:
-            return err("사용법: constraint velocity_max=2.5m ...")
+            return err("사용법: constraint velocity_max=2.5m/s ...")
         new = set_constraint_attributes(source, kv)
         return CommandResult(new, ["제약 조건 갱신"], level="OK")
+
+    if verb == "report":
+        if not pos or not pos[0].lower().endswith((".pdf", ".html", ".htm")):
+            return err("사용법: report <파일.pdf|html>")
+        return CommandResult(action="report", args={"path": pos[0]}, messages=[f"계산 보고서 → {pos[0]}"],
+                             rerun=False)
 
     return err(f"알 수 없는 명령 '{verb}'. 'help' 입력.")
 

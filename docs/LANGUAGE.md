@@ -58,7 +58,13 @@ pipe main_pipe { start = p1; end = j1; via = [(45, 0, 8), (45, 0, 5)]; diameter 
 경로 = [start, via…, end] (양 끝 노드에 x/y 필요, 없으면 `SEM010` 후 무시). `length` 생략 시 경로 길이로 채우고, 지정 길이가 경로보다 짧으면 `SEM008`. 경로의 꺾임마다 엘보 K 가 `auto_k` 에 가산되고, 도면에 엘보·절단 길이로 표시된다([DRAWING](DRAWING.md)).
 
 ### constraint
-`velocity_min`, `velocity_max`, `safety_factor_head`, `safety_factor_npsh`.
+`velocity_min`, `velocity_max`(m/s), `safety_factor_head`, `safety_factor_npsh`, `pipe_standard`(KS 기본 · JIS · ANSI ·
+라이브러리에 추가한 표준 — Auto-sizing 관경 표).
+
+### 값 검증
+블록별 속성·차원·단위·선택지는 `core/language.py` 가 정의한다. 모르는 단위·차원이 다른 단위는 오류(`SEM012`, 1배로 가정하지 않음),
+없는 속성은 경고(`SEM013`), 선택지·범위 밖(`SEM014`), 모르는 부속(`SEM015`), 모르는 블록(`SYN002`). 입력이 없어 쓴 기본값은
+`DEF001`(INFO) 와 보고서 '적용한 기본값'에 남는다. 비율은 `0.75` 또는 `75%`.
 
 ## 재질 (`material`)
 
@@ -107,7 +113,7 @@ system main {
     unit_system = METRIC; fluid = water; temp = 20; altitude = 70m;
     friction_model = DW;
 }
-constraint { velocity_max = 2.5m; safety_factor_head = 1.1; }
+constraint { velocity_max = 2.5m/s; safety_factor_head = 1.1; }
 
 tank reservoir { z = 10m; volume = 50m3; level_max = 1.5m; }
 junction j1     { z = 5m; x = 50; y = 0; }

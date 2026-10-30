@@ -18,8 +18,10 @@ FHDL/
 │   ├── core/             # 엔진 + 단일 진실원(language·fittings·materials·pipe_sizes·units) + geometry·dsl_editor·command·project_io
 │   ├── db/               # project_db (프로젝트별), library_db (전역 부품 CRUD)
 │   ├── drawing/          # 도면 생성 (ISO·평면·정면·P&ID → SVG·PDF·DXF·STEP)
-│   └── gui/              # main_window + panels/ (5패널) + log_console + library_dialog
-├── tests/                # pytest (161개)
+│   ├── domains.py        # 설계 분야 레지스트리 (FHDL 유체 · EHDL 전기 — 시작 화면)
+├── src/ehdl/             # EHDL 전기 설계·검산 엔진 (SPEC: docs/ehdl/) + rules/(원문 대조 규칙) + kb/(기준 원문 DB)
+│   └── gui/              # start_dialog(분야 선택) + main_window + panels/ (5패널) + log_console + library_dialog
+├── tests/                # pytest (280개)
 ├── resources/styles/     # dark_theme.qss
 ├── data/library.db       # 전역 부품 라이브러리
 ├── projects/             # 프로젝트별 작업공간
@@ -110,6 +112,16 @@ FHDL/
 - [x] 기하 검증(SEM008~011)·배관 경유점 via·부속 위치(@)·숨은 엘보 K
 - [x] 배관 도면 생성(ISO 6412-2 아이소메트릭·평면·정면·P&ID) + ISO 기호·BOM·절단표 + PDF·DXF·SVG·STEP(SolidCraft, 선택) — `docs/DRAWING.md`
 - [x] 사용자 기호표·도면 양식 DXF(`archive/dxf/`) → 도면 기호·양식 데이터 이식(`drawing/data/`, 재현성 테스트)
+- [x] 시작 화면 — 설계 분야 선택(FHDL / EHDL), 선택 기억, 실행 중 분야 전환
+- [~] **EHDL 전기 설비 설계** — SPEC v0.1·검토(`docs/ehdl/`), 결정 D1~D4 확정
+  - [x] 엔진 Phase 1 핵심: DSL·의미분석·부하/시나리오/상별 집계·전압강하(부속서 G)·판정·설명/질문·병목
+  - [x] 기준 원문 9종 지식 DB(`python -m ehdl.kb.build archive/EHDL-Docs`, 로컬 전용) + 규칙 원문 대조
+  - [x] GUI(시작 화면 활성화·DSL 에디터·단선결선도 그래프 에디터·노드 상세 7항목·결과·명령 콘솔)·보고서 B~F·계통 구성도
+  - [x] Phase 2: 단락전류(IEC 60909)·차단용량·열적 내량·보호협조·전동기 기동·누전·SPD·보정계수 표(B.52.14~18)
+  - [x] Phase 3: 접지계통(TN/TT/IT)·고장보호(자동차단)·PE·등전위본딩·수전 종합·설계 변경 영향
+  - [x] SPEC 보완: 전선 규격 후보·최소 단락 순시 동작·혼합 모드·기동 방식·차단기 설정·변경 이력
+- [x] FHDL 구 명세 점검 보완: 입력 검증·중단/수렴·미저장 확인·되돌리기·실시간 검사·기본값 기록·라이브러리 DB 연결(KS/JIS/ANSI)·계산 보고서 PDF
+  - [ ] 이후: 아이소메트릭 CAD (기본형 완성 후 — 사용자 결정)
 - [ ] **(차후 대형) 복합 루프망 Hardy-Cross** — `docs/ROADMAP.md` §1
 - [ ] **(차후 대형) 수충격 MOC 정밀 해석** — `docs/ROADMAP.md` §2
 - [ ] (로드맵) CAD/BIM 양방향 연동(도면→DSL 가져오기), 다국어(i18n)

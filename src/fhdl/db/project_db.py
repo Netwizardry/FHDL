@@ -297,6 +297,10 @@ class ProjectDB:
         result.entity_map = entity_map or EntityMap()
         result.node_results = self.get_node_results()
         result.pipe_results = self.get_pipe_results()
+        for pr in result.pipe_results:          # 길이는 DB 에 없음 — 소스 엔티티에서
+            p = result.entity_map.pipes.get(pr.pipe_id)
+            if p is not None:
+                pr.length = p.length
 
         srow = self.get_last_summary()
         if srow:

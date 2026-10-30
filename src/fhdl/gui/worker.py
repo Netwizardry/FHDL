@@ -42,8 +42,8 @@ class AnalysisWorker(QRunnable):
             library = None
             try:
                 import os
-                from ..db.library_db import LibraryDB
-                lib_path = os.path.join(os.getcwd(), "data", "library.db")
+                from ..db.library_db import LibraryDB, default_library_path
+                lib_path = default_library_path()
                 if os.path.exists(lib_path):
                     library = LibraryDB(lib_path)
             except Exception:

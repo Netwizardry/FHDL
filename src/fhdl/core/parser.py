@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
-from .language import NODE_TYPES
+from .language import BLOCK_KEYWORDS, NODE_TYPES
 from .models import (
     ASTNode, ComponentASTNode, ConnectASTNode, ConstraintASTNode,
     DiagnosticItem, SourceSpan, SystemASTNode,
@@ -23,10 +23,10 @@ from .models import (
 def _parse_value_unit(raw: str) -> Tuple[float, str]:
     """'10m' -> (10.0, 'm'), '1.5MPa' -> (1.5, 'MPa'), '120' -> (120.0, '')"""
     raw = raw.strip()
-    m = re.match(r'^([+-]?[\d.]+(?:[eE][+-]?\d+)?)\s*([a-zA-Z%/³³]*)\s*$', raw)
+    m = re.match(r'^([+-]?[\d.]+(?:[eE][+-]?\d+)?)\s*([a-zA-Z%/³°][a-zA-Z0-9%/³°]*)?\s*$', raw)
     if not m:
         return (0.0, "")
-    return (float(m.group(1)), m.group(2).strip())
+    return (float(m.group(1)), (m.group(2) or "").strip())
 
 
 # ---------------------------------------------------------------------------
@@ -69,6 +69,13 @@ class FHDLParser:
 
     def _parse_statements(self, clean: str, raw: str):
         """최상위 블록/문장을 순서대로 파싱한다."""
+        # 모르는 블록 키워드 — 조용히 버리지 않는다 (SYN002)
+        known = {k.lower() for k in BLOCK_KEYWORDS}
+        for m in re.finditer(r'(?:^|[;}])\s*([A-Za-z_]\w*)\s+(?:\w+\s*)?\{', clean):
+            kw = m.group(1)
+            if kw.lower() not in known:
+                self._add_error("SYN002", f"알 수 없는 블록 '{kw}' 은(는) 해석하지 않습니다.",
+                                self._span_from_match(m, raw), action="가능한 블록: " + ", ".join(BLOCK_KEYWORDS))
         # system ... { ... }
         for m in re.finditer(
             r'\b(system)\s+(\w+)\s*\{([^}]*)\}',

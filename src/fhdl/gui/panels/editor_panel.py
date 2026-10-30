@@ -142,6 +142,29 @@ class FHDLEditor(QPlainTextEdit):
     def _on_text_changed(self):
         self._debounce_timer.start()
 
+    INDENT = "    "
+
+    def keyPressEvent(self, event):
+        """자동 들여쓰기: Enter → 현재 줄 들여쓰기 유지(`{` 로 끝나면 한 단계 더), `}` → 한 단계 내어쓰기."""
+        key = event.key()
+        cur = self.textCursor()
+        if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter) and not event.modifiers() & (
+                Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier):
+            line = cur.block().text()[:cur.positionInBlock()]
+            indent = line[:len(line) - len(line.lstrip())]
+            if line.rstrip().endswith("{"):
+                indent += self.INDENT
+            cur.insertText("\n" + indent)
+            self.setTextCursor(cur)
+            return
+        if event.text() == "}":
+            line = cur.block().text()[:cur.positionInBlock()]
+            if line.strip() == "" and line:
+                cur.movePosition(QTextCursor.MoveOperation.StartOfBlock, QTextCursor.MoveMode.KeepAnchor)
+                cur.insertText(line[:-len(self.INDENT)] if line.endswith(self.INDENT) else "")
+                self.setTextCursor(cur)
+        super().keyPressEvent(event)
+
     def _emit_debounced(self):
         self.text_changed_debounced.emit(self.toPlainText())
 
@@ -994,8 +1017,24 @@ class EditorPanel(QWidget):
     def jump_to_line(self, line: int):
         self._editor.jump_to_line(line)
 
-    def set_source(self, text: str):
-        self._editor.setPlainText(text)
+    def set_source(self, text: str, reset_undo: bool = False):
+        """그래프·명령 편집 결과 반영. 기본은 한 번의 편집으로 넣어 Ctrl+Z 로 되돌릴 수 있게 한다."""
+        ed = self._editor
+        if reset_undo:
+            ed.setPlainText(text)
+            return
+        if text == ed.toPlainText():
+            return
+        bar = ed.verticalScrollBar()
+        pos, top = ed.textCursor().position(), bar.value()
+        cur = QTextCursor(ed.document())
+        cur.beginEditBlock()
+        cur.select(QTextCursor.SelectionType.Document)
+        cur.insertText(text)
+        cur.endEditBlock()
+        cur.setPosition(min(pos, len(text)))
+        ed.setTextCursor(cur)
+        bar.setValue(top)
 
     @property
     def fhd_path(self) -> Optional[str]:

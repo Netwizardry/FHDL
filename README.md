@@ -23,6 +23,17 @@
 
 > 수충격 정밀 해석, 복합 루프망(Hardy-Cross), CAD/BIM 양방향 연동(도면 가져오기)은 로드맵.
 
+### EHDL — 전력계통 설계·검산 (`--domain ehdl`)
+
+- 노드(전원·변압기·배전반·분전반·차단기·부하)와 배선으로 계통을 DSL(`main.ehd`)·그래프로 구성
+- 부하 P·Q·S 상향 집계, 상별 전류·불평형, 동시운전 그룹·시나리오(최대 부하 제약 탐색), 경로 전압강하(KS C IEC 60364-5-52 부속서 G)
+- 요구조건(Required) vs 실제 규격(Installed) 판정 PASS/FAIL/REVIEW/UNKNOWN, 병목 경로, **"왜 이 규격인가"** 설명·확인 질문
+- 판정 근거에 **KEC 원문 조항·쪽**(지식 DB — `python -m ehdl.kb.build`), 계통 구성도(단선결선도)·검산 보고서(B~F)
+- Phase 2: 단락전류(KS C IEC 60909-0)·차단용량·도체 열적 내량·보호협조·전동기 기동·누전차단기·SPD·허용전류 보정계수
+- Phase 3: 계통접지(TN-S/TN-C/TN-C-S/TT/IT)·고장보호(전원 자동차단, 고장루프 임피던스)·PE·등전위본딩·수전 종합(설비용량·최대수요·계약전력·변압기)·설계 변경 영향
+- 기본설계: 전선 규격 후보(허용전류·보호협조·전압강하·열적 내량 동시 만족), 최소 단락전류 순시 동작·차단 범위, 혼합 모드(기존/신규), 기동 방식, 차단기 설정(Ir·Isd·tsd·Ics), 변경 이력
+- 문서: [docs/ehdl/](docs/ehdl/GUI.md)
+
 전체 문서: [docs/INDEX.md](docs/INDEX.md)
 
 ---
@@ -48,10 +59,12 @@ pip install -r requirements-dev.txt
 ## 실행
 
 ```bash
-python main.py
+python main.py                  # 시작 화면에서 설계 분야 선택 (FHDL 유체 / EHDL 전기)
+python main.py --domain fhdl    # 시작 화면 없이 바로 FHDL
+python main.py --select         # "다음부터 바로 시작"으로 기억된 선택을 무시하고 시작 화면 표시
 ```
 
-최초 실행 시 `data/library.db`(부품 라이브러리)가 자동 생성됩니다.
+최초 실행 시 `data/library.db`(부품 라이브러리)가 자동 생성됩니다. 실행 중에는 파일 → 설계 분야 전환으로 시작 화면에 돌아갑니다.
 
 ---
 
@@ -137,7 +150,7 @@ FHDL/
 ├── resources/styles/       # dark_theme.qss
 ├── data/library.db         # 전역 부품 라이브러리 (자동 생성)
 ├── projects/               # 프로젝트별 작업공간 (main.fhd, state.db, project.fhproj)
-├── tests/                  # pytest (161개)
+├── tests/                  # pytest (280개)
 ├── docs/                   # 코드 기준 문서 (INDEX·LANGUAGE·SOLVER·…)
 └── archive/                # 구 명세·감사·v0.1 보관
 ```
@@ -147,7 +160,7 @@ FHDL/
 ## 테스트
 
 ```bash
-pytest -q     # 161개 (파서·솔버·네트워크·재질·부속·경로·도면·DXF 이식·DB·프로젝트IO·명령콘솔 등)
+pytest -q     # 280개 (파서·솔버·네트워크·재질·부속·경로·도면·DXF 이식·DB·프로젝트IO·명령콘솔 등)
 ```
 
 ---

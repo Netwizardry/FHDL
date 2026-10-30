@@ -11,7 +11,7 @@ from typing import List
 from .models import AnalysisResult, NodeCalcResult, PipeCalcResult, SystemSummary
 
 
-def generate_reports(result: AnalysisResult, output_dir: str) -> dict:
+def generate_reports(result: AnalysisResult, output_dir: str, source: str = "") -> dict:
     """
     AnalysisResult → CSV/JSON 파일로 저장.
     반환: {nodes_csv: path, pipes_csv: path, summary_json: path}
@@ -22,7 +22,7 @@ def generate_reports(result: AnalysisResult, output_dir: str) -> dict:
 
     nodes_path = _write_nodes_csv(result.node_results, run_dir)
     pipes_path = _write_pipes_csv(result.pipe_results, run_dir)
-    summary_path = _write_summary_json(result, run_dir)
+    summary_path = _write_summary_json(result, run_dir, source)
 
     return {
         "nodes_csv": str(nodes_path),
@@ -34,7 +34,7 @@ def generate_reports(result: AnalysisResult, output_dir: str) -> dict:
 
 def _write_nodes_csv(rows: List[NodeCalcResult], run_dir: Path) -> Path:
     path = run_dir / "Nodes_Report.csv"
-    with open(path, "w", newline="", encoding="utf-8") as f:
+    with open(path, "w", newline="", encoding="utf-8-sig") as f:   # BOM — Excel 에서 한글이 깨지지 않게
         w = csv.writer(f)
         w.writerow([
             "Node_ID", "Head(m)", "Pressure(MPa)", "Flow_In(L/min)",
@@ -56,18 +56,18 @@ def _write_nodes_csv(rows: List[NodeCalcResult], run_dir: Path) -> Path:
 
 def _write_pipes_csv(rows: List[PipeCalcResult], run_dir: Path) -> Path:
     path = run_dir / "Pipes_Report.csv"
-    with open(path, "w", newline="", encoding="utf-8") as f:
+    with open(path, "w", newline="", encoding="utf-8-sig") as f:   # BOM — Excel 에서 한글이 깨지지 않게
         w = csv.writer(f)
         w.writerow([
             "Pipe_ID", "Diameter(mm)", "Length(m)", "Flow(L/min)",
             "Velocity(m/s)", "HeadLoss_F(m)", "HeadLoss_K(m)",
-            "HeadLoss_Total(m)", "Surge_Index", "Status", "Formula",
+            "HeadLoss_Total(m)", "Surge_Index", "Status", "Sizing_Mode", "Formula",
         ])
         for r in rows:
             w.writerow([
                 r.pipe_id,
                 f"{r.diameter * 1000:.1f}",
-                "",  # 길이는 별도 보관
+                f"{r.length:.2f}",
                 f"{r.flow * 60000:.2f}",
                 f"{r.velocity:.3f}",
                 f"{r.h_loss_f:.4f}",
@@ -75,15 +75,18 @@ def _write_pipes_csv(rows: List[PipeCalcResult], run_dir: Path) -> Path:
                 f"{r.h_loss_total:.4f}",
                 f"{r.surge_index:.3f}",
                 r.status,
+                r.sizing_mode,
                 r.formula_id,
             ])
     return path
 
 
-def _write_summary_json(result: AnalysisResult, run_dir: Path) -> Path:
+def _write_summary_json(result: AnalysisResult, run_dir: Path, source: str = "") -> Path:
+    from .calc_report import header_info
     path = run_dir / "Simulation_Summary.json"
     s = result.summary
     payload = {
+        "header": header_info(result, source),
         "status": result.status,
         "total_flow_m3h": s.total_flow * 3600,
         "required_head_m": s.required_head,
@@ -94,6 +97,8 @@ def _write_summary_json(result: AnalysisResult, run_dir: Path) -> Path:
         },
         "recommended_tank_volume_m3": s.recommended_tank_volume,
         "converged": s.converged,
+        "solve_iterations": s.solve_iterations,
+        "residual_m": s.residual,
         "diagnostics": [
             {
                 "code": d.code,
@@ -102,6 +107,10 @@ def _write_summary_json(result: AnalysisResult, run_dir: Path) -> Path:
                 "related_id": d.related_id,
             }
             for d in result.diagnostics
+        ],
+        "defaults_applied": [
+            {"item": what, "value": val, "entities": ids}
+            for (what, val), ids in (result.entity_map.defaults_applied.items() if result.entity_map else [])
         ],
         "provenance_map": s.provenance_map,
     }

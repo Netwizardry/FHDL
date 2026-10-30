@@ -108,6 +108,10 @@ def _canonical(name: str) -> str:
     return ""
 
 
+def is_known_fitting(name: str) -> bool:
+    return bool(_canonical(name))
+
+
 def fitting_k(name: str) -> float:
     """부속 1개의 K값 (미정의 시 0.0). 정본 키·별칭·대소문자 모두 허용."""
     canon = _canonical(name)
@@ -184,9 +188,13 @@ def fitting_symbol(name: str) -> str:
     return FITTING_SYMBOLS.get(_canonical(name), "")
 
 
-def sum_fittings_k(spec: str) -> float:
-    """피팅 명세 문자열의 총 K 합산."""
-    return sum(fitting_k(name) * count for name, count in parse_fittings(spec))
+def sum_fittings_k(spec: str, lookup=None) -> float:
+    """피팅 명세 문자열의 총 K 합산. lookup(name) → K 또는 None (라이브러리 우선, 없으면 내장 표)."""
+    total = 0.0
+    for name, count in parse_fittings(spec):
+        k = lookup(name) if lookup else None
+        total += (fitting_k(name) if k is None else k) * count
+    return total
 
 
 def elbow_k_for_angle(angle_deg: float) -> float:

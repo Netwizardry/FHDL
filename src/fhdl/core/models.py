@@ -155,6 +155,8 @@ class PipeEntity:
     material: str = "Steel"
     roughness: float = 0.045e-3  # m (DW용)
     c_factor: float = 120.0      # HW용
+    wave_velocity: float = 1200.0    # m/s 압력파 속도 (재질 물성 — 수충격 위험 지수)
+    max_pressure: float = 2.0e6      # Pa 허용 압력 (재질 물성)
     manual_k: float = 0.0
     auto_k: float = 0.0
     via: List[Tuple[float, float, float]] = field(default_factory=list)  # 경유점 (x, y, z) m
@@ -197,6 +199,8 @@ class ConstraintConfig:
     safety_factor_head: float = 1.1
     safety_factor_npsh: float = 1.1
     pipe_standard: str = "KS"
+    # Auto-sizing 후보 내경(m) — 라이브러리 pipe_sizes(pipe_standard) 가 있으면 그것, 없으면 core.pipe_sizes KS
+    diameters: List[float] = field(default_factory=list)
 
 
 EntityType = TankEntity | PumpEntity | PipeEntity | JunctionEntity | TerminalEntity
@@ -212,6 +216,8 @@ class EntityMap:
     terminals: Dict[str, TerminalEntity] = field(default_factory=dict)
     constraints: ConstraintConfig = field(default_factory=ConstraintConfig)
     connections: List[Tuple[str, str]] = field(default_factory=list)  # [(from_id, to_id)]
+    # 입력이 없어 적용한 기본값: (속성 설명, 적용 값) → [엔티티 ID]  (R-NFR-006 · APPENDIX_A §4.2)
+    defaults_applied: Dict[Tuple[str, str], List[str]] = field(default_factory=dict)
 
     def get_node_entity(self, entity_id: str) -> Optional[EntityType]:
         for d in (self.tanks, self.pumps, self.junctions, self.terminals):
@@ -268,6 +274,7 @@ class PipeCalcResult:
     status: str = "OK"
     k_total: float = 0.0        # 국부손실계수 합 (수동 + 자동피팅)
     k_auto: float = 0.0         # 자동 엘보(꺾임각) K
+    length: float = 0.0         # m (해석에 쓴 길이 — 좌표 추정 포함)
 
     @property
     def h_loss_total(self) -> float:
@@ -303,12 +310,13 @@ class SystemSummary:
     recommended_tank_volume: float = 0.0
     solve_iterations: int = 0
     converged: bool = False
+    residual: float = 0.0           # 마지막 반복의 최대 수두 변화량 (m)
     provenance_map: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
 class AnalysisResult:
-    status: Literal["OK", "FAILED", "PARTIAL"] = "FAILED"
+    status: Literal["OK", "FAILED", "PARTIAL", "CANCELLED"] = "FAILED"   # CANCELLED: 사용자 중단 — 결과 폐기
     node_results: List[NodeCalcResult] = field(default_factory=list)
     pipe_results: List[PipeCalcResult] = field(default_factory=list)
     summary: SystemSummary = field(default_factory=SystemSummary)

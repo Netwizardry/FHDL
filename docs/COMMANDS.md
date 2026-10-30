@@ -14,9 +14,10 @@
 | `del <id>` (rm, delete) | 노드(연결 포함)/배관 삭제 | `del T1` |
 | `link <A> <B> [length=10m]` | A→B 연결(pipe+connect) 추가 | `link src j1 length=8m` |
 | `unlink <A> <B>` | A→B 연결 삭제 | `unlink src j1` |
-| `constraint k=v ...` | 제약(유속·안전율) 설정 | `constraint velocity_max=2.5m` |
+| `constraint k=v ...` | 제약(유속·안전율) 설정 | `constraint velocity_max=2.5m/s` |
 | `ls` (list) | 노드/배관 목록 | `ls` |
 | `dwg <iso\|plan\|elevation\|pid>` (drawing) | 도면 탭에서 해당 도면 보기 | `dwg plan` |
+| `report <파일.pdf\|html>` | 수리 계산 보고서 (최근 해석 결과, 상대 경로 = 프로젝트 폴더) | `report calc.pdf` |
 | `dwg export <파일> [views=…]` | 도면 내보내기 — 확장자로 형식(pdf·dxf·svg·png·step). pdf/dxf 기본 4장 전체, svg/png 기본 현재 도면. 상대 경로는 프로젝트 폴더 기준 | `dwg export plant.pdf` · `dwg export iso.svg views=iso` |
 | `run` | 해석 실행 | `run` |
 | `save` | 프로젝트 저장 | `save` |

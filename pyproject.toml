@@ -18,6 +18,9 @@ dependencies = [
 fhdl = "fhdl.app:main"
 
 [project.optional-dependencies]
+kb = [
+    "pymupdf>=1.23",    # EHDL 지식 DB 빌드(PDF 읽기) 전용 — python -m ehdl.kb.build
+]
 dev = [
     "pytest>=8.0",
     "pytest-qt>=4.4",
@@ -29,6 +32,7 @@ where = ["src"]
 [tool.setuptools.package-data]
 # 기호표·도면 양식 DXF 에서 추출한 도면 데이터 (drawing/dxf_symbols.py · dxf_form.py 로 재생성)
 "fhdl.drawing" = ["data/*.json"]
+"ehdl.rules" = ["*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

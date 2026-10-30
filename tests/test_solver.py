@@ -43,8 +43,8 @@ system main {
 }
 
 constraint {
-    velocity_max = 2.5m;
-    velocity_min = 0.3m;
+    velocity_max = 2.5m/s;
+    velocity_min = 0.3m/s;
 }
 
 tank src {

@@ -58,7 +58,7 @@ class AnalysisPipeline:
 
         # --- Step 2: 의미 분석 ---
         _status("의미 분석 중...")
-        analyzer = SemanticAnalyzer()
+        analyzer = SemanticAnalyzer(library=library)
         em, sem_diags = analyzer.analyze(ast)
         result.diagnostics.extend(sem_diags)
         result.entity_map = em
@@ -85,6 +85,10 @@ class AnalysisPipeline:
         result.pipe_results = pipe_results
         result.summary = summary
 
+        if solver.cancelled:
+            result.status = "CANCELLED"     # 부분 결과는 쓰지 않는다 (저장·리포트 없음)
+            return result
+
         if any(d.severity == "FATAL" for d in solver.diagnostics):
             result.status = "FAILED"
             return result
@@ -96,7 +100,7 @@ class AnalysisPipeline:
         if output_dir and result.status != "FAILED":
             _status("리포트 저장 중...")
             try:
-                paths = generate_reports(result, output_dir)
+                paths = generate_reports(result, output_dir, source_code)
                 result.summary.provenance_map["_output_paths"] = paths
             except Exception as e:
                 result.diagnostics.append(DiagnosticItem(

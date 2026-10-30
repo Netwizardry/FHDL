@@ -10,7 +10,8 @@ import math
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
-from .fittings import parse_fitting_placements, sum_fittings_k
+from .fittings import is_known_fitting, parse_fittings, parse_fitting_placements, sum_fittings_k
+from .language import BLOCK_ATTRS, DIMENSION_UNITS, ENUM_VALUES, VALUE_RANGES
 from .geometry import pipe_route, polyline_length
 from .materials import material_properties
 from .models import (
@@ -41,8 +42,28 @@ _UNIT_TO_SI: Dict[str, float] = {
     "mwg": 9806.65,  # m수두
     # 체적
     "m3": 1.0, "l": 1e-3, "gal": 3.78541e-3,
+    # 속도·온도·비율
+    "m/s": 1.0, "mps": 1.0, "ft/s": 0.3048, "c": 1.0, "°c": 1.0, "degc": 1.0, "%": 1e-2,
     "": 1.0,  # 단위 없음: 무변환
 }
+
+
+# 입력이 없을 때 쓰는 기본값 (값은 아래 생성 코드의 기본 인자와 같아야 한다 — 기록·안내용)
+_SYSTEM_DEFAULTS = (("유체", "water"), ("유체 온도", "20°C"), ("마찰 모델", "DW (Darcy-Weisbach)"),
+                    ("기준 해발 altitude", "0 m"))
+_CONSTRAINT_DEFAULTS = {
+    "velocity_min": ("최소 유속", "0.3 m/s"), "velocity_max": ("최대 유속", "3.0 m/s"),
+    "safety_factor_head": ("양정 안전율", "1.1"), "safety_factor_npsh": ("NPSH 안전율", "1.1"),
+}
+_ENTITY_DEFAULTS = {
+    "tank": {"level_max": ("탱크 최고 수위 level_max", "2 m")},
+    "pump": {"efficiency": ("펌프 효율", "0.75"), "npshr": ("필요 NPSH npshr", "0.5 m")},
+    "terminal": {"required_p": ("말단 요구 압력", "0 (대기 방출)")},
+    "pipe": {"material": ("배관 재질", "Steel")},
+}
+
+_DIM_KO = {"length": "길이", "flow": "유량", "pressure": "압력", "volume": "체적", "velocity": "유속",
+           "temp": "온도", "ratio": "비율"}
 
 
 def _to_si(value: float, unit: str) -> float:
@@ -58,6 +79,29 @@ def _to_si(value: float, unit: str) -> float:
 # ---------------------------------------------------------------------------
 
 class SemanticAnalyzer:
+    """library(LibraryDB, 선택): 재질 물성·부속 K·관경 표준을 라이브러리 DB 에서 먼저 찾는다(사용자 편집 반영).
+    없거나 항목이 없으면 내장 단일 진실원(core.materials·fittings·pipe_sizes)을 쓴다."""
+
+    def __init__(self, library=None):
+        self._lib = library
+
+    def _material(self, mat: str):
+        if self._lib is not None:
+            try:
+                row = self._lib.get_material(mat)
+            except Exception:
+                row = None
+            if row:
+                return row
+        return material_properties(mat)
+
+    def _fitting_lookup(self, name: str):
+        if self._lib is None:
+            return None
+        try:
+            return self._lib.find_fitting_k(name)
+        except Exception:
+            return None
 
     def analyze(
         self, ast: List[ASTNode]
@@ -65,6 +109,9 @@ class SemanticAnalyzer:
         self._diags: List[DiagnosticItem] = []
         self._datum = 0.0   # 프로젝트 기준 해발(altitude). 노드 z 는 이 기준 상대값.
         em = EntityMap()
+        self._em = em
+        has_system = any(isinstance(n, SystemASTNode) for n in ast)
+        has_constraint = any(isinstance(n, ConstraintASTNode) for n in ast)
 
         # 1차: 엔티티 생성
         for node in ast:
@@ -81,13 +128,55 @@ class SemanticAnalyzer:
         # 1.5차: connect 체인에 끼인 배관의 끝점 추론 (connect a -> pipe1 -> b)
         self._infer_pipe_endpoints(em)
 
+        # 관경 표준 → Auto-sizing 후보 내경
+        self._resolve_diameters(em)
+
         # 2차: 참조 무결성 + 중복 ID
         self._check_references(em)
 
         # 3차: 배관 길이 ↔ 끝점 좌표 기하 정합성
         self._check_pipe_geometry(em)
 
+        if not has_system:
+            for what, val in _SYSTEM_DEFAULTS:
+                self._default("system", what, val)
+        if not has_constraint:
+            for what, val in _CONSTRAINT_DEFAULTS.values():
+                self._default("constraint", what, val)
+        for (what, val), ids in em.defaults_applied.items():
+            shown = ", ".join(ids[:8]) + (f" 외 {len(ids) - 8}개" if len(ids) > 8 else "")
+            self._diags.append(DiagnosticItem(
+                code="DEF001", severity="INFO", message=f"기본값 적용 — {what}: {val} ({shown})",
+                source_span=SourceSpan(), related_id=ids[0],
+                suggested_action="설계 조건이 다르면 해당 속성을 직접 입력하세요."))
         return em, self._diags
+
+    def _default(self, owner: str, what: str, val: str):
+        ids = self._em.defaults_applied.setdefault((what, val), [])
+        if owner not in ids:
+            ids.append(owner)
+
+    def _note_defaults(self, owner: str, attrs: Dict[str, Any], table):
+        for key, (what, val) in table.items():
+            if key not in attrs:
+                self._default(owner, what, val)
+
+    def _resolve_diameters(self, em: EntityMap):
+        from .pipe_sizes import KS_DIAMETERS_M
+        std = em.constraints.pipe_standard or "KS"
+        sizes = []
+        if self._lib is not None:
+            try:
+                sizes = [d for _, d in self._lib.get_standard_sizes(std)]
+            except Exception:
+                sizes = []
+        if sizes:
+            em.constraints.diameters = sorted(sizes)
+            return
+        em.constraints.diameters = list(KS_DIAMETERS_M)
+        if std != "KS":
+            self._warn("SEM016", f"관경 표준 '{std}' 이(가) 부품 라이브러리에 없어 KS 관경으로 Auto-sizing 합니다.",
+                       SourceSpan(), "라이브러리(관경 표)에 해당 표준을 추가하거나 pipe_standard 를 확인하세요.")
 
     def _infer_pipe_endpoints(self, em: EntityMap):
         """start/end 가 비어 있는 배관을 connect 체인 위치에서 추론한다.
@@ -114,10 +203,17 @@ class SemanticAnalyzer:
 
     def _build_fluid(self, node: SystemASTNode) -> FluidConfig:
         a = node.attributes
+        self._validate("system", a, node.span, node.name)
+        self._note_defaults("system", a, {k: v for k, v in zip(("fluid", "temp", "friction_model", "altitude"),
+                                                               _SYSTEM_DEFAULTS)})
         cfg = FluidConfig()
         cfg.fluid_type = str(a.get("fluid", "water")).lower()
         cfg.unit_system = str(a.get("unit_system", "METRIC")).upper()
         cfg.friction_model = str(a.get("friction_model", "DW")).upper()
+        if cfg.friction_model not in ENUM_VALUES["friction_model"]:
+            cfg.friction_model = "DW"
+        if cfg.unit_system not in ENUM_VALUES["unit_system"]:
+            cfg.unit_system = "METRIC"
 
         temp_raw = a.get("temp", 20.0)
         cfg.temp = self._as_float(temp_raw, "")
@@ -142,6 +238,10 @@ class SemanticAnalyzer:
         ctype = node.comp_type
         cid = node.comp_id
         span = node.span
+        self._validate(ctype, a, span, cid)
+        self._note_defaults(cid, a, _ENTITY_DEFAULTS.get(ctype, {}))
+        if ctype == "pipe" and not any(k in a for k in ("fittings", "k_factor")):
+            self._default(cid, "국부 손실(부속)", "미입력 → K=0, 경로 꺾임 자동 엘보만 반영")
 
         # 중복 ID 검사
         all_ids = (
@@ -235,7 +335,7 @@ class SemanticAnalyzer:
 
             # 재질 → 물성 자동 적용 (라이브러리 정본). 명시적 roughness/c_factor 가 우선.
             mat = str(a.get("material", "Steel"))
-            props = material_properties(mat)
+            props = self._material(mat)
             mat = props["material_id"] if props else mat   # 정본 id 로 정규화
             def_rough = props["roughness_m"] if props else 0.045e-3
             def_c = props["c_factor_hw"] if props else 120.0
@@ -250,7 +350,12 @@ class SemanticAnalyzer:
             manual_k = self._as_float(a.get("k_factor", 0.0), "")
             fittings_spec = str(a.get("fittings", ""))
             if fittings_spec:
-                manual_k += sum_fittings_k(fittings_spec)
+                manual_k += sum_fittings_k(fittings_spec, self._fitting_lookup)
+                unknown = sorted({n for n, _ in parse_fittings(fittings_spec)
+                                  if not is_known_fitting(n) and self._fitting_lookup(n) is None})
+                if unknown:
+                    self._warn("SEM015", f"배관 '{cid}'의 부속 {', '.join(unknown)} 이(가) 부속 라이브러리에 없어 "
+                               "K=0 으로 계산됩니다.", span, "부속 이름을 확인하거나(help fittings) k_factor 로 직접 지정하세요.")
 
             via = self._parse_via(a.get("via", ""), cid, span)
 
@@ -263,6 +368,8 @@ class SemanticAnalyzer:
                 material=mat,
                 roughness=roughness,
                 c_factor=c_factor,
+                wave_velocity=(props or {}).get("wave_velocity_ms") or 1200.0,
+                max_pressure=(props or {}).get("max_pressure_pa") or 2.0e6,
                 manual_k=manual_k,
                 via=via,
                 fittings=fittings_spec,
@@ -276,11 +383,14 @@ class SemanticAnalyzer:
 
     def _build_constraints(self, node: ConstraintASTNode) -> ConstraintConfig:
         a = node.attributes
+        self._validate("constraint", a, node.span, "constraint")
+        self._note_defaults("constraint", a, _CONSTRAINT_DEFAULTS)
         cfg = ConstraintConfig()
         cfg.velocity_min = self._as_si(a.get("velocity_min", (0.3, "m/s")))
         cfg.velocity_max = self._as_si(a.get("velocity_max", (3.0, "m/s")))
         cfg.safety_factor_head = self._as_float(a.get("safety_factor_head", 1.1), "")
         cfg.safety_factor_npsh = self._as_float(a.get("safety_factor_npsh", 1.1), "")
+        cfg.pipe_standard = str(a.get("pipe_standard", "KS")).upper()
         return cfg
 
     # ------------------------------------------------------------------
@@ -404,7 +514,7 @@ class SemanticAnalyzer:
         if isinstance(raw, (int, float)):
             return float(raw)
         if isinstance(raw, tuple):
-            return float(raw[0])
+            return float(raw[0]) / (100.0 if raw[1] == "%" else 1.0)
         try:
             return float(str(raw))
         except Exception:
@@ -433,6 +543,76 @@ class SemanticAnalyzer:
                        f"노드 절대 해발 {abs_alt:g}m (= datum {self._datum:g}m + z {rel_z:g}m)가 "
                        f"허용 범위(-500~10000m)를 벗어납니다.", span,
                        "altitude(기준 해발) 또는 노드 z 값을 확인하세요.")
+
+    # ------------------------------------------------------------------
+    # 속성 검증 (language.BLOCK_ATTRS 기준)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _split_unit(raw: Any) -> Optional[Tuple[float, str]]:
+        """값 → (수치, 단위 소문자) — 수치가 아니면 None."""
+        if isinstance(raw, bool):
+            return None
+        if isinstance(raw, (int, float)):
+            return float(raw), ""
+        if isinstance(raw, tuple):
+            return float(raw[0]), str(raw[1]).lower().replace(" ", "")
+        if isinstance(raw, str):
+            m = re.match(r'^([+-]?\d[\d.]*(?:[eE][+-]?\d+)?)\s*(\S*)$', raw.strip())
+            if m:
+                return float(m.group(1)), m.group(2).lower()
+        return None
+
+    def _validate(self, block: str, attrs: Dict[str, Any], span: SourceSpan, owner: str):
+        """SEM012 단위 오류 · SEM013 모르는 속성 · SEM014 선택지·범위 밖 값."""
+        spec = BLOCK_ATTRS.get(block, {})
+        for key, raw0 in attrs.items():
+            raw = f"{raw0[0]:g}{raw0[1]}" if isinstance(raw0, tuple) else raw0
+            dim = spec.get(key)
+            if dim is None:
+                self._warn("SEM013", f"'{owner}' 의 '{key}' 는 {block} 블록에 없는 속성이라 무시됩니다.", span,
+                           f"{block} 속성: {', '.join(spec)}")
+                continue
+            if dim == "enum":
+                allowed = ENUM_VALUES[key]
+                val = str(raw)
+                if val.lower() not in {x.lower() for x in allowed}:
+                    if key == "fluid":
+                        self._warn("SEM014", f"유체 '{val}' 물성이 없어 물(water) 물성으로 계산합니다.", span,
+                                   "현재 지원 유체: water")
+                    else:
+                        self._err("SEM014", f"'{owner}' 의 {key} = {val} 은(는) 선택지 밖입니다 "
+                                  f"(가능: {', '.join(allowed)}).", span, f"{key} 를 {allowed[0]} 등으로 지정하세요.")
+                continue
+            if dim in ("id", "text"):
+                continue
+            if isinstance(raw, str) and raw.strip().lower() in ("auto", "inf"):
+                continue
+            vu = self._split_unit(raw0)
+            if vu is None:
+                self._err("SEM012", f"'{owner}' 의 {key} = {raw} 은(는) 수치가 아닙니다.", span,
+                          "수치와 단위로 지정하세요 (예: 10m, 100lpm).")
+                continue
+            val, unit = vu
+            if dim == "number":
+                if unit and unit != "%":
+                    self._err("SEM012", f"'{owner}' 의 {key} 는 무차원 수인데 단위 '{unit}' 가 붙었습니다.", span)
+            elif dim == "velocity" and unit == "m":
+                self._warn("SEM012", f"'{owner}' 의 {key} = {val:g}m 를 {val:g}m/s 로 해석합니다.", span,
+                           "유속 단위는 m/s 로 쓰세요.")
+            elif unit and unit not in DIMENSION_UNITS[dim]:
+                other = next((d for d, us in DIMENSION_UNITS.items() if unit in us), None)
+                why = f"{_DIM_KO[other]} 단위" if other else "알 수 없는 단위"
+                self._err("SEM012", f"'{owner}' 의 {key} = {raw}: '{unit}' 는 {why}입니다 — {key} 는 {_DIM_KO[dim]} "
+                          f"(가능: {', '.join(DIMENSION_UNITS[dim])}).", span,
+                          "단위를 고치세요. 모르는 단위는 1배로 가정하지 않습니다.")
+                continue
+            rng = VALUE_RANGES.get(key)
+            if rng:
+                v = val / 100.0 if unit == "%" else val
+                if not (rng[0] <= v <= rng[1]):
+                    self._warn("SEM014", f"'{owner}' 의 {key} = {raw} 이(가) 통상 범위({rng[0]:g}~{rng[1]:g}) 밖입니다.",
+                               span, "값과 단위(비율은 0.75 또는 75%)를 확인하세요.")
 
     # ------------------------------------------------------------------
     # 진단 헬퍼

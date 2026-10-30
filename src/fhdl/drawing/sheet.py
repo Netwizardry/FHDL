@@ -23,6 +23,14 @@ LAYERS: Dict[str, Tuple[str, str]] = {
     "DIM":     ("치수", "#007A33"),
     "TEXT":    ("주석", "#000000"),
     "NORTH":   ("방위 표시", "#000000"),
+    # EHDL 계통 구성도 (단선결선도)
+    "WIRE":    ("전력 배선·모선", "#000000"),
+    "DEVICE":  ("전기 설비 기호", "#1F4FBF"),
+    "ST_FAIL":    ("판정 FAIL", "#D0021B"),
+    "ST_UNKNOWN": ("판정 UNKNOWN", "#E67E22"),
+    "ST_REVIEW":  ("판정 REVIEW", "#B7950B"),
+    "ST_PASS":    ("판정 PASS", "#1E8449"),
+    "ST_NA":      ("판정 N/A", "#7F8C8D"),
 }
 
 

@@ -40,7 +40,12 @@ projects/<name>/
 ## 전역 라이브러리 DB (`data/library.db`)
 
 테이블: `pipe_sizes`, `pipe_materials`, `fitting_kfactors`, `pump_curves`, `pump_curve_points`, `fluid_properties`.
-- 시드: 관경(KS), 재질(`core/materials`), 부속(`core/fittings`), 물성(물 0~100°C).
+- 위치: `db.library_db.default_library_path()` — 환경변수 `FHDL_LIBRARY`, 없으면 설치 폴더의 `data/library.db`(작업 폴더와 무관).
+- 시드: 관경 KS(`core/pipe_sizes` 정본 — 이전의 한 칸 어긋난 KS 시드는 열 때 자동 교체)·JIS G 3452 SGP·ASME B36.10M Sch40
+  (외경·두께 → 내경), 재질(`core/materials`), 부속(`core/fittings`), 물성(물 0~100°C).
+- **해석 연결**: GUI 해석은 라이브러리를 넘긴다(`AnalysisPipeline.run(library=…)`). 재질 물성(조도·C·압력파 속도·허용 압력)과
+  부속 K 는 **라이브러리 우선**, 없으면 내장 표. Auto-sizing 관경은 `constraint pipe_standard`(기본 KS)의 라이브러리 관경
+  (없으면 KS 내장 표 + `SEM016`). 펌프 커브는 `curve_id`. 유체 물성은 같은 식이라 내장 계산을 쓴다.
 - **CRUD**: 각 테이블 `list_/upsert_/delete_` (GUI 부품 라이브러리 관리 다이얼로그에서 사용).
 
 ## 저장/로드/복원 (`core/project_io.py`)

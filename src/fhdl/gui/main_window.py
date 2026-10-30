@@ -9,7 +9,7 @@ from enum import auto, Enum
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import QSize, Qt, QThreadPool
+from PySide6.QtCore import QSize, Qt, QThreadPool, Signal
 from PySide6.QtGui import QAction, QFont, QIcon, QKeySequence
 from PySide6.QtWidgets import (
     QApplication, QDialog, QHBoxLayout, QLabel, QMainWindow,
@@ -69,7 +69,19 @@ _STATE_COLORS = {
 # 메인 윈도우
 # ---------------------------------------------------------------------------
 
+def load_theme_qss() -> str:
+    """resources/styles/dark_theme.qss (없으면 빈 문자열). 시작 화면과 메인 창이 공유."""
+    # src/fhdl/gui/main_window.py → 프로젝트 루트 = parents[3]
+    qss_path = Path(__file__).resolve().parents[3] / "resources" / "styles" / "dark_theme.qss"
+    try:
+        return qss_path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+
 class MainWindow(QMainWindow):
+    switch_domain_requested = Signal()   # 파일 → 설계 분야 전환 (시작 화면으로)
+    closed = Signal()                    # 창이 실제로 닫힘 (앱 컨트롤러가 종료 판단)
 
     def __init__(self):
         super().__init__()
@@ -92,6 +104,7 @@ class MainWindow(QMainWindow):
         self._build_status_bar()
         self._connect_signals()
         self._set_state(AppState.IDLE)
+        self._saved_source = self._editor_panel.get_source()   # 마지막 저장/열기 시점 소스 (미저장 판단)
 
     # ------------------------------------------------------------------
     # UI 구성
@@ -167,6 +180,9 @@ class MainWindow(QMainWindow):
             ("열기(&O)", "Ctrl+O", self._project_panel._open_project),
             ("저장(&S)", "Ctrl+S", self._save),
             ("도면 내보내기(&E)…", "Ctrl+Shift+E", self._drawing_panel.export_dialog),
+            ("계산 보고서 내보내기(&R)…", "Ctrl+Shift+R", self.export_report_dialog),
+            (None, None, None),
+            ("설계 분야 전환(&D)…", "", self.switch_domain_requested.emit),
             (None, None, None),
             ("종료(&Q)", "Ctrl+Q", self.close),
         ]:
@@ -237,6 +253,12 @@ class MainWindow(QMainWindow):
         if res.action == "run":
             self._run_analysis()
             return
+        if res.action == "report":
+            path = res.args["path"]
+            if not os.path.isabs(path) and self._project_dir:
+                path = os.path.join(self._project_dir, path)
+            self.export_report(path)
+            return
         if res.action == "drawing":
             self._view_tabs.setCurrentWidget(self._drawing_panel)
             if "view" in res.args:
@@ -251,6 +273,28 @@ class MainWindow(QMainWindow):
             self._editor_panel.set_source(res.new_source)
             if res.rerun:
                 self._run_analysis()
+
+    def export_report_dialog(self):
+        from PySide6.QtWidgets import QFileDialog
+        start = os.path.join(self._project_dir or ".", "calc_report.pdf")
+        path, _ = QFileDialog.getSaveFileName(self, "계산 보고서 내보내기", start, "PDF (*.pdf);;HTML (*.html)")
+        if path:
+            self.export_report(path)
+
+    def export_report(self, path: str) -> Optional[str]:
+        """최근 해석 결과의 수리 계산 보고서 (PDF/HTML) — 해석한 소스 기준."""
+        if self._last_result is None:
+            self._log("보고서: 먼저 해석(F5)하세요.", "ERROR")
+            return None
+        from ..core.calc_report import export_calc_report
+        try:
+            out = export_calc_report(self._last_result, path, self._analyzed_source, self._project_name())
+        except Exception as e:
+            self._log(f"보고서 저장 실패: {e}", "ERROR")
+            return None
+        stale = self._analyzed_source != self._editor_panel.get_source()
+        self._log(f"계산 보고서 → {out}" + (" (편집 후 재해석 전 결과)" if stale else ""), "WARNING" if stale else "OK")
+        return out
 
     def _build_status_bar(self):
         sb = self.statusBar()
@@ -325,13 +369,36 @@ class MainWindow(QMainWindow):
     # 이벤트 핸들러
     # ------------------------------------------------------------------
 
+    def has_unsaved_changes(self) -> bool:
+        return self._editor_panel.get_source() != self._saved_source
+
+    def confirm_discard(self, what: str = "계속") -> bool:
+        """미저장 변경이 있으면 저장/버리기/취소를 묻는다. 진행해도 되면 True."""
+        if not self.has_unsaved_changes():
+            return True
+        buttons = QMessageBox.StandardButton
+        choice = buttons.Discard | buttons.Cancel
+        if self._project_dir:
+            choice |= buttons.Save
+        ans = QMessageBox.question(
+            self, "저장하지 않은 변경",
+            f"편집한 FHDL 코드가 저장되지 않았습니다. {what} 전에 저장할까요?", choice,
+            buttons.Save if self._project_dir else buttons.Cancel)
+        if ans == buttons.Save:
+            self._save()
+            return not self.has_unsaved_changes()
+        return ans == buttons.Discard
+
     def _on_project_opened(self, path: str):
         from ..core.project_io import load_project
 
+        if path != self._project_dir and not self.confirm_discard("다른 프로젝트를 열기"):
+            return
         self._project_dir = path
         fhd = os.path.join(path, "main.fhd")
         if os.path.exists(fhd):
             self._editor_panel.load_file(fhd)
+        self._saved_source = self._editor_panel.get_source()
         self.setWindowTitle(f"FHDL — {Path(path).name}")
 
         # 캐시(state.db) 가 현재 소스와 일치하면 결과를 재계산 없이 복원
@@ -361,6 +428,33 @@ class MainWindow(QMainWindow):
     def _on_text_changed(self, text: str):
         if self._state not in (AppState.VALIDATING, AppState.SOLVING):
             self._set_state(AppState.DIRTY)
+        self._lint(text)
+
+    def _lint(self, text: str):
+        """실시간 검사 (편집 300ms 뒤): 구문·의미 진단만 즉시 — 해석 결과는 건드리지 않는다.
+
+        진단 패널 = 지금 소스의 SYN/SEM + 직전 해석의 네트워크·계산 진단(다음 해석 전까지 유지)."""
+        from ..core.parser import FHDLParser
+        from ..core.semantic import SemanticAnalyzer
+        if not text.strip():
+            return
+        try:
+            ast, diags = FHDLParser().parse(text)
+            if not any(d.is_blocking for d in diags):
+                diags = diags + SemanticAnalyzer().analyze(ast)[1]
+        except Exception as e:                     # 검사기는 편집을 막지 않는다
+            self._log(f"실시간 검사 오류: {e}", "WARNING")
+            return
+        prev = [d for d in (self._last_result.diagnostics if self._last_result else [])
+                if not d.code.startswith(("SYN", "SEM"))]
+        self._lint_diags = diags
+        self._diag_panel.update_diagnostics(diags + prev)
+        self._editor_panel.set_error_lines({d.source_span.line: d.code for d in diags
+                                            if d.source_span.line > 0 and d.severity in ("ERROR", "FATAL")})
+        n_err = sum(1 for d in diags if d.is_blocking)
+        n_wrn = sum(1 for d in diags if d.severity == "WARNING")
+        self._msg_label.setText(f"실시간 검사 — 오류 {n_err} · 경고 {n_wrn}" if (n_err or n_wrn)
+                                else "실시간 검사 — 문제 없음")
 
     def _on_diagnostic_selected(self, code: str, line: int):
         if line > 0:
@@ -479,11 +573,9 @@ class MainWindow(QMainWindow):
 
     def _on_manage_library(self):
         from .library_dialog import LibraryManagerDialog
-        from ..db.library_db import LibraryDB
-        db_path = os.path.join(os.getcwd(), "data", "library.db")
-        os.makedirs(os.path.dirname(db_path), exist_ok=True)
-        db = LibraryDB(db_path)
-        self._log("부품 라이브러리 관리 열기", "INFO")
+        from ..db.library_db import LibraryDB, default_library_path
+        db = LibraryDB(default_library_path())
+        self._log(f"부품 라이브러리 관리 열기 — {default_library_path()} (재질·부속 K·관경 표가 해석에 쓰입니다)", "INFO")
         try:
             LibraryManagerDialog(db, self).exec()
         finally:
@@ -553,6 +645,7 @@ class MainWindow(QMainWindow):
             # main.fhd 원자적 저장 + project.fhproj 갱신 + (있으면)결과 캐시
             save_project(self._project_dir, self._editor_panel.get_source(),
                          result=self._last_result, name=Path(self._project_dir).name)
+            self._saved_source = self._editor_panel.get_source()
             self._set_state(AppState.SAVED, "저장 완료")
         except Exception as e:
             self._set_state(AppState.DIRTY, f"저장 실패: {e}")
@@ -588,7 +681,7 @@ class MainWindow(QMainWindow):
     def _stop_analysis(self):
         if self._worker:
             self._worker.cancel()
-        self._set_state(AppState.ABORTED, "분석 취소됨")
+            self._set_state(AppState.ABORTED, "분석 취소 중...")
 
     def _on_status_update(self, msg: str):
         self._set_state(AppState.SOLVING, msg)
@@ -596,6 +689,12 @@ class MainWindow(QMainWindow):
     def _on_analysis_finished(self, result):
         from ..core.models import AnalysisResult
         r: AnalysisResult = result
+        worker, self._worker = self._worker, None
+        if r.status == "CANCELLED" or (worker is not None and worker._cancel):
+            # 중단된 해석의 부분 결과는 표시·캐시하지 않는다 — 편집 상태로 복귀
+            self._log("해석을 중단했습니다 — 부분 결과는 폐기했습니다.", "WARNING")
+            self._set_state(AppState.DIRTY, "분석 취소됨 — 결과 폐기")
+            return
 
         # 진단 패널 업데이트
         self._diag_panel.update_diagnostics(r.diagnostics)
@@ -637,8 +736,8 @@ class MainWindow(QMainWindow):
                 from ..core.project_io import save_project
                 save_project(self._project_dir, self._analyzed_source, r,
                              write_fhd=False)
-            except Exception:
-                pass
+            except Exception as e:
+                self._log(f"결과 캐시(state.db) 저장 실패 — 다음에 열 때 다시 해석해야 합니다: {e}", "WARNING")
 
         s = r.summary
         self._log(
@@ -654,6 +753,7 @@ class MainWindow(QMainWindow):
         self._set_state(state, msg)
 
     def _on_analysis_error(self, err: str):
+        self._worker = None
         self._log(f"내부 오류: {err}", "ERROR")
         self._set_state(AppState.CALC_FAILED, f"내부 오류: {err}")
 
@@ -675,11 +775,17 @@ class MainWindow(QMainWindow):
         QProgressBar::chunk { background:#007ACC; }
     """
 
+    def closeEvent(self, event):
+        if not self.confirm_discard("닫기"):
+            event.ignore()
+            return
+        if self._worker:
+            self._worker.cancel()
+        super().closeEvent(event)
+        if event.isAccepted():
+            self.closed.emit()
+
     def _apply_dark_theme(self):
         """resources/styles/dark_theme.qss 를 로드해 전역 테마 적용 (실패 시 폴백)."""
         # src/fhdl/gui/main_window.py → 프로젝트 루트 = parents[3]
-        qss_path = Path(__file__).resolve().parents[3] / "resources" / "styles" / "dark_theme.qss"
-        try:
-            self.setStyleSheet(qss_path.read_text(encoding="utf-8"))
-        except OSError:
-            self.setStyleSheet(self._FALLBACK_QSS)
+        self.setStyleSheet(load_theme_qss() or self._FALLBACK_QSS)

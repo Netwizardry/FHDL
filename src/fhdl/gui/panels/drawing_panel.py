@@ -75,6 +75,12 @@ class _SheetView(QGraphicsView):
             return
         super().mouseReleaseEvent(event)
 
+    def contextMenuEvent(self, event):
+        ref = self._ref_at(event.pos())
+        if ref:
+            self._panel.select(ref)
+            self._panel.context_menu(ref, event.globalPos())
+
     def mouseDoubleClickEvent(self, event):
         ref = self._ref_at(event.position().toPoint())
         if ref:
@@ -84,6 +90,13 @@ class _SheetView(QGraphicsView):
 
 
 class DrawingPanel(QWidget):
+    """도면 보기 패널. 다른 분야(EHDL)는 아래 클래스 속성과 build_sheet·export_file·
+    is_node·context_menu 를 재정의해 같은 렌더링·선택·강조·내보내기를 재사용한다."""
+    VIEW_ITEMS = [(v, VIEW_NAMES[v]) for v in VIEWS]
+    DRAG_VIEWS = ("plan", "elevation")
+    EXPORT_FILTERS = _EXPORT_FILTERS
+    VIEW_LABEL = "도면:"
+
     entity_selected = Signal(str)
     node_double_clicked = Signal(str)
     pipe_double_clicked = Signal(str)
@@ -99,8 +112,8 @@ class DrawingPanel(QWidget):
         self._selected = ""
 
         self._view_combo = QComboBox()
-        for v in VIEWS:
-            self._view_combo.addItem(VIEW_NAMES[v], v)
+        for v, name in self.VIEW_ITEMS:
+            self._view_combo.addItem(name, v)
         self._view_combo.currentIndexChanged.connect(lambda _: self._rebuild())
         fit_btn = QPushButton("맞춤")
         fit_btn.clicked.connect(self.fit)
@@ -111,7 +124,7 @@ class DrawingPanel(QWidget):
 
         bar = QHBoxLayout()
         bar.setContentsMargins(4, 2, 4, 2)
-        bar.addWidget(QLabel("도면:"))
+        bar.addWidget(QLabel(self.VIEW_LABEL))
         bar.addWidget(self._view_combo)
         bar.addWidget(fit_btn)
         bar.addWidget(self._export_btn)
@@ -128,7 +141,7 @@ class DrawingPanel(QWidget):
     # ------------------------------------------------------------------
     @property
     def current_view(self) -> str:
-        return self._view_combo.currentData() or "iso"
+        return self._view_combo.currentData() or self.VIEW_ITEMS[0][0]
 
     def set_view(self, view: str) -> None:
         i = self._view_combo.findData(view)
@@ -142,13 +155,13 @@ class DrawingPanel(QWidget):
 
     def _rebuild(self, keep_zoom: bool = False) -> None:
         transform = self._view.transform() if keep_zoom and self._sheet else None
-        self._sheet = build_drawing(self._result, self.current_view, self._project)
+        self._sheet = self.build_sheet(self.current_view)
         self._populate(self._sheet)
         if transform is not None:
             self._view.setTransform(transform)
         else:
             self.fit()
-        drag = self.current_view in ("plan", "elevation")
+        drag = self.current_view in self.DRAG_VIEWS
         self._hint.setText("클릭 선택 · 더블클릭 편집" + (" · 노드 드래그로 좌표 이동" if drag else ""))
         if self._selected:
             self.select(self._selected, emit=False)
@@ -254,7 +267,7 @@ class DrawingPanel(QWidget):
             self.pipe_double_clicked.emit(ref)
 
     def can_drag(self, ref: str) -> bool:
-        return (self.current_view in ("plan", "elevation") and self._is_node(ref)
+        return (self.current_view in self.DRAG_VIEWS and self._is_node(ref)
                 and self._sheet is not None and self._sheet.fit is not None)
 
     def preview_move(self, ref: str, d: QPointF) -> None:
@@ -293,12 +306,25 @@ class DrawingPanel(QWidget):
         return attrs
 
     # ------------------------------------------------------------------
+    # --- 재정의 지점 ------------------------------------------------------
+    def build_sheet(self, view: str) -> Sheet:
+        return build_drawing(self._result, view, self._project)
+
+    def has_result(self) -> bool:
+        return self._result is not None and getattr(self._result, "entity_map", None) is not None
+
+    def export_file(self, path: str, views: Optional[List[str]]) -> str:
+        return export_drawing(self._result, path, views=views, project=self._project)
+
+    def context_menu(self, ref: str, global_pos) -> None:
+        """오른쪽 클릭 메뉴 (기본 없음)."""
+
     def export_dialog(self) -> None:
-        if self._result is None or getattr(self._result, "entity_map", None) is None:
+        if not self.has_result():
             self.message.emit("도면 내보내기: 먼저 해석을 실행하세요.", "WARNING")
             return
         base = os.path.join(os.path.expanduser("~"), f"{self._project or 'fhdl'}_drawing")
-        path, flt = QFileDialog.getSaveFileName(self, "도면 내보내기", base, _EXPORT_FILTERS)
+        path, flt = QFileDialog.getSaveFileName(self, "도면 내보내기", base, self.EXPORT_FILTERS)
         if not path:
             return
         ext = flt.split("*.")[-1].rstrip(")")
@@ -308,14 +334,14 @@ class DrawingPanel(QWidget):
 
     def export(self, path: str, views: Optional[List[str]] = None) -> str:
         """views 생략 시: svg/png = 현재 도면, pdf/dxf = 전체(ISO·평면·정면·P&ID)."""
-        if self._result is None or getattr(self._result, "entity_map", None) is None:
+        if not self.has_result():
             self.message.emit("도면 내보내기: 먼저 해석을 실행하세요.", "WARNING")
             return ""
         ext = os.path.splitext(path)[1].lower().lstrip(".")
         if views is None and ext in ("svg", "png"):
             views = [self.current_view]
         try:
-            msg = export_drawing(self._result, path, views=views, project=self._project)
+            msg = self.export_file(path, views)
         except Exception as e:  # 파일 쓰기·의존성 오류를 로그로
             self.message.emit(f"도면 내보내기 실패: {e}", "ERROR")
             return ""

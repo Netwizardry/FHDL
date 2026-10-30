@@ -1,0 +1,73 @@
+// EHDL 데모 — 공장 수배전 계통 (특고압 수전 → 변압기 → 배전반 → 분전반 2면)
+// 사용자는 설비 제원·연결·설치 조건만 입력하고, 요구조건과 판정·근거·질문은 EHDL 이 계산한다.
+
+system plant {
+    frequency = 60Hz;
+    rules = kec_lv;           // 원문 대조 규칙 (src/ehdl/rules/kec_lv.json)
+    review_below = 80%;       // 사용률이 이보다 낮고 선정 근거가 없으면 '근거 확인'(규정 아님)
+    motor_start_vd_limit = 15%;   // 펌프 기동 중 허용 전압강하 (기기 요구값 예시)
+    earthing = TN-C-S;            // 계통접지 방식 (KEC 203.1)
+    contract_kw = 300kW;          // 한전 계약전력 — 최대수요전력·변압기 정격과 별도
+    diversity = 1.1;              // 부등률 (식 230-6)
+}
+
+// sc_mva: 한전 제공 공급점 단락용량 (검사·점검 기준 표 220-2 — 예시값)
+source KEPCO { name = "한전 수전점"; voltage = 22.9kV; phases = 3; limit_kw = 400kW;
+               sc_mva = 500MVA; sc_mva_min = 300MVA; rx = 0.1; }
+
+transformer TR1 { feed = KEPCO; primary = 22.9kV; secondary = 380V; rated = 500kVA; uk = 5%; ur = 1.2%; }
+
+switchboard MDB { name = "메인 배전반"; feed = TR1; rated_current = 800A;
+                  justification = "2공장 증설 150kW 예정"; }
+
+// ── 분전반 A : 펌프 3대 (2대 운전·1대 예비) ─────────────────────
+breaker CB_FA { parent = MDB; name = "분전반 A 간선 MCCB"; rated_current = 225A; standard = IEC60947-2;
+                instantaneous = 10; breaking_capacity = 35kA; trip_time = 0.02s; }
+panel PNL_A { name = "분전반 A (동력)"; rated_current = 225A; demand_factor = 80%; }
+cable F_A { from = CB_FA; to = PNL_A; length = 45m; length_basis = measured;
+            material = Cu; size = 95mm2; insulation = XLPE;
+            install_method = C; ambient = 30C; grouping = 1; pe_size = 50mm2; circuit = distribution; }
+
+group PUMPS { max_on = 2; }
+breaker CB_P1 { parent = PNL_A; rated_current = 100A; standard = IEC60947-2; instantaneous = 12;
+                breaking_capacity = 25kA; trip_time = 0.02s; start_trip_multiple = 7.5; }
+breaker CB_P2 { parent = PNL_A; rated_current = 100A; standard = IEC60947-2; instantaneous = 12;
+                breaking_capacity = 25kA; trip_time = 0.02s; }
+breaker CB_P3 { parent = PNL_A; rated_current = 100A; standard = IEC60947-2; instantaneous = 12;
+                breaking_capacity = 25kA; trip_time = 0.02s; }
+load P1 { name = "냉각수 펌프 1"; kind = motor; rating = 37kW; basis = output; efficiency = 93%; pf = 0.86; phases = 3; group = PUMPS;
+          start_multiplier = 6.5; start_time = 4s; start_pf = 0.3; }
+load P2 { name = "냉각수 펌프 2"; kind = motor; rating = 37kW; basis = output; efficiency = 93%; pf = 0.86; phases = 3; group = PUMPS;
+          start_multiplier = 6.5; start_time = 4s; start_pf = 0.3; }
+load P3 { name = "냉각수 펌프 3(예비)"; kind = motor; rating = 37kW; basis = output; efficiency = 93%; pf = 0.86; phases = 3; group = PUMPS;
+          start_multiplier = 6.5; start_time = 4s; start_pf = 0.3; }
+cable C_P1 { from = CB_P1; to = P1; length = 60m; material = Cu; size = 25mm2; insulation = XLPE; install_method = C; ambient = 30C; grouping = 1; }
+cable C_P2 { from = CB_P2; to = P2; length = 65m; material = Cu; size = 25mm2; insulation = XLPE; install_method = C; ambient = 30C; grouping = 1; }
+cable C_P3 { from = CB_P3; to = P3; length = 70m; material = Cu; size = 25mm2; insulation = XLPE; install_method = C; ambient = 30C; grouping = 1; }
+
+// ── 분전반 B : 조명·콘센트·히터 (단상 부하 상 배분) ─────────────────
+breaker CB_FB { parent = MDB; name = "분전반 B 간선 MCCB"; rated_current = 60A; standard = IEC60947-2;
+                instantaneous = 10; breaking_capacity = 18kA; trip_time = 0.02s; }
+panel PNL_B { name = "분전반 B (전등·전열)"; rated_current = 100A; demand_factor = 70%; }
+cable F_B { from = CB_FB; to = PNL_B; length = 120m; material = Cu; size = 16mm2; insulation = PVC; ampacity = 68A;
+            pe_size = 16mm2; circuit = distribution; }
+
+breaker CB_L1 { parent = PNL_B; rated_current = 20A; standard = IEC60898; curve = C; breaking_capacity = 6kA; trip_time = 0.01s; }
+load LT1 { name = "작업장 조명"; kind = lighting; rating = 3.2kW; pf = 0.95; phases = 1; phase = L1; }
+cable C_LT1 { from = CB_L1; to = LT1; length = 55m; material = Cu; size = 2.5mm2; insulation = PVC; install_method = B1; ambient = 30C; grouping = 1;
+              pe_size = 2.5mm2; }
+rcd ELB_R { parent = PNL_B; name = "콘센트 누전차단기"; rated_current = 30A; sensitivity = 30mA; }
+load RC1 { feed = ELB_R; name = "콘센트 회로 1"; kind = receptacle; rating = 3kW; pf = 0.9; phases = 1; phase = L2; socket_rating = 16A; }
+load RC2 { parent = PNL_B; name = "콘센트 회로 2"; kind = receptacle; rating = 3kW; pf = 0.9; phases = 1; socket_rating = 16A; }
+load HT1 { parent = PNL_B; name = "건조기 히터"; kind = heater; rating = 18kW; pf = 1.0; phases = 3; }
+
+// ── 접지·등전위본딩 (전력 트리 밖) ────────────────────────────
+earth MET   { name = "주접지단자"; kind = main_terminal; }
+earth EL1   { name = "접지극"; kind = electrode; resistance = 10; }
+earth WATER { name = "수도 인입관"; kind = extraneous; }
+bond B_E { from = MET; to = EL1; kind = earthing; material = Cu; size = 25mm2; }
+bond B_W { from = MET; to = WATER; kind = main; material = Cu; size = 10mm2; }
+
+// ── 운전 시나리오 ─────────────────────────────────────────
+scenario summer_peak { on = [P1, P2, HT1, LT1, RC1, RC2]; }
+scenario changeover  { on = [P1, P2, P3]; }     // 펌프 교대 순간 3대 동시 (제약 위반 → 경고)

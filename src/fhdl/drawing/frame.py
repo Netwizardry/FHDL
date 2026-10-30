@@ -44,13 +44,13 @@ def draw_border(sheet: Sheet) -> None:
 
 
 def draw_title_block(sheet: Sheet, title: str, project: str, view_label: str,
-                     sheet_no: str = "1/1", date: Optional[str] = None) -> None:
+                     sheet_no: str = "1/1", date: Optional[str] = None, drawn: str = "FHDL") -> None:
     """아래쪽 표제란 (오른쪽부터 칸을 채운다)."""
     m, y0, y1 = MARGIN, MARGIN, MARGIN + TITLE_H
     date = date or _dt.date.today().isoformat()
     cells = [  # (라벨, 값, 너비)
         ("PROJECT", project, 70.0), ("DRAWING TITLE", title, 110.0), ("VIEW", view_label, 60.0),
-        ("SCALE", "NTS", 25.0), ("DATE", date, 32.0), ("DRAWN", "FHDL", 28.0),
+        ("SCALE", "NTS", 25.0), ("DATE", date, 32.0), ("DRAWN", drawn, 28.0),
         ("SHEET", sheet_no, 25.0),
     ]
     x = m

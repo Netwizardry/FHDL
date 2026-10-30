@@ -15,3 +15,9 @@ projects/*/outputs/
 
 # Windows 다운로드 표식 (NTFS 대체 스트림이 WSL 에서 파일로 보임)
 *:Zone.Identifier
+
+# EHDL 지식 DB·원문 (원문에 '무단전재 및 재배포 금지' 문서 포함 → 로컬 전용)
+data/ehdl_kb.db
+archive/EHDL-Docs/
+# 사용자 원본 CAD 자료 (도면 데이터로 이식 완료, 로컬 보관)
+archive/dxf/
