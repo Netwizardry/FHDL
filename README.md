@@ -11,7 +11,8 @@
 - **정상상태 수리해석** (2-Pass: 유량 합성 → Newton-Raphson 수압 평형)
 - **Auto-sizing** — 유속 제약을 만족하는 표준 관경(KS) 자동 선정
 - **마찰 모델** — Darcy-Weisbach(Swamee-Jain) / Hazen-Williams, 재질별 물성 자동 적용
-- **부속(밸브·엘보·티·레듀서) 국부손실** + 꺾임각 자동 엘보 K
+- **부속(밸브·엘보·티·레듀서) 국부손실** + 꺾임각 자동 엘보 K (배관 경유점 `via` 포함)
+- **배관 도면 자동 생성** — ISO 아이소메트릭(ISO 6412-2 스타일)·평면도·정면도·계통도(P&ID), ISO 기호·치수·BOM·단관 절단 길이·표제란, **PDF·DXF·SVG·PNG** 내보내기 (선택: SolidCraft 로 STEP 3D)
 - **펌프 양정 주입**(실제 에너지원) 및 탱크/펌프 사양 선정(안전율)
 - **해발 datum**: 노드 z는 기준 해발 상대값, 해발·온도로 대기압·물성 산정
 - **NPSHa·캐비테이션·수충격·진공 한계** 진단, 네트워크 무결성(NET) 검사
@@ -20,7 +21,7 @@
 - **프로젝트 저장/로드/복원**(체크섬 캐시) + **부품 라이브러리 CRUD**
 - 단위계 METRIC/IMPERIAL 표시, CSV/JSON 리포트(provenance)
 
-> 수충격 정밀 해석, 복합 루프망(Hardy-Cross), 펌프 커브 운전점, CAD/BIM 연동은 로드맵.
+> 수충격 정밀 해석, 복합 루프망(Hardy-Cross), CAD/BIM 양방향 연동(도면 가져오기)은 로드맵.
 
 전체 문서: [docs/INDEX.md](docs/INDEX.md)
 
@@ -56,34 +57,46 @@ python main.py
 
 ## DSL 예시
 
-`projects/demo_project/main.fhd` 발췌:
+`projects/demo_project/main.fhd` 와 같은 모델을 한 줄 형식으로 줄인 것 (`z` 는 `elevation` 과 같은 키):
 
 ```c
 system main {
     unit_system = METRIC;
     fluid = water;
     temp = 20;
+    altitude = 0m;
     friction_model = DW;     // DW | HW
 }
 
 constraint {
+    velocity_min = 0.3m;
     velocity_max = 2.5m;
     safety_factor_head = 1.1;
 }
 
-tank reservoir { z = 10m; volume = 50m3; level_max = 1.5m; }
-junction j1     { z = 5m; }
-terminal sprinkler_A { z = 3m; required_q = 80lpm; required_p = 0.1MPa; }
-terminal nozzle_B    { z = 2m; required_q = 60lpm; required_p = 0.08MPa; }
+tank reservoir       { z = 10m; volume = 50m3; level_max = 1.5m; x = 0;   y = 0; }
+pump p1              { z = 8m;  x = 5;   y = 0; }      // 양정 auto → 사양 선정 대상
+junction j1          { z = 5m;  x = 50;  y = 0; }
+terminal sprinkler_A { z = 3m;  required_q = 80lpm; required_p = 0.1MPa;  x = 100; y = 30; }
+terminal nozzle_B    { z = 2m;  required_q = 60lpm; required_p = 0.08MPa; x = 100; y = -30; }
 
-pipe main_pipe { start = reservoir; end = j1;          length = 60m; diameter = auto; material = Steel; }
-pipe branch_A  { start = j1;        end = sprinkler_A; length = 35m; diameter = auto; material = PVC;
-                 fittings = [elbow_90, valve_gate]; }
-pipe branch_B  { start = j1;        end = nozzle_B;    length = 40m; diameter = auto; material = Steel; }
+// via = 경유점 (x, y, z) m → 꺾임마다 엘보 K, length 생략 시 경로 길이 / 부속 위치 name@거리
+pipe suction   { start = reservoir; end = p1; via = [(0, 0, 8)];
+                 diameter = auto; material = Steel; fittings = [valve_gate@1m, strainer_y@4m]; }
+pipe main_pipe { start = p1; end = j1; via = [(45, 0, 8), (45, 0, 5)];
+                 diameter = auto; material = Steel;
+                 fittings = [valve_check@3m, valve_gate@6m, pressure_gauge@10m]; }
+pipe branch_A  { start = j1; end = sprinkler_A; via = [(50, 30, 5), (100, 30, 5)];
+                 diameter = auto; material = Steel; fittings = [valve_ball@2m, flow_meter@50%]; }
+pipe branch_B  { start = j1; end = nozzle_B; via = [(50, -30, 5), (100, -30, 5)];
+                 diameter = auto; material = Steel; fittings = [valve_globe@2m]; }
 
-connect reservoir -> j1 -> sprinkler_A;
+connect reservoir -> p1 -> j1;
+connect j1 -> sprinkler_A;
 connect j1 -> nozzle_B;
 ```
+
+이 모델의 도면(아이소메트릭·평면·정면·P&ID)은 GUI 「도면」 탭 또는 `dwg export demo.pdf` 로 얻는다 — [docs/DRAWING.md](docs/DRAWING.md).
 
 **지원 블록 키워드:** `system`, `constraint`, `tank`, `pump`, `junction`, `terminal`, `pipe`, `connect`
 `z` 는 `system.altitude`(기준 해발) 상대 고도이며, `diameter = auto` 로 두면 표준 관경이 자동 선정됩니다.
@@ -115,14 +128,16 @@ FHDL/
 ├── requirements*.txt       # pip 편의 미러본
 ├── src/fhdl/
 │   ├── core/               # 엔진: parser·semantic·solver·pipeline·report
-│   │                       #   + language·fittings·materials·units (단일 진실원)
+│   │                       #   + language·fittings·materials·pipe_sizes·units (단일 진실원)
+│   │                       #   + geometry (경로·엘보 테이크오프)
 │   │                       #   + dsl_editor·command·project_io
 │   ├── db/                 # library_db (전역 부품 CRUD), project_db (프로젝트별)
+│   ├── drawing/            # 도면 생성: ISO·평면·정면·P&ID → SVG·PDF·DXF(·STEP)
 │   └── gui/                # main_window + panels/ (5패널) + log_console + library_dialog
 ├── resources/styles/       # dark_theme.qss
 ├── data/library.db         # 전역 부품 라이브러리 (자동 생성)
 ├── projects/               # 프로젝트별 작업공간 (main.fhd, state.db, project.fhproj)
-├── tests/                  # pytest (102개)
+├── tests/                  # pytest (152개)
 ├── docs/                   # 코드 기준 문서 (INDEX·LANGUAGE·SOLVER·…)
 └── archive/                # 구 명세·감사·v0.1 보관
 ```
@@ -132,7 +147,7 @@ FHDL/
 ## 테스트
 
 ```bash
-pytest -q     # 102개 (파서·솔버·네트워크·재질·부속·DB·프로젝트IO·명령콘솔 등)
+pytest -q     # 152개 (파서·솔버·네트워크·재질·부속·경로·도면·DB·프로젝트IO·명령콘솔 등)
 ```
 
 ---

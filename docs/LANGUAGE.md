@@ -22,7 +22,9 @@ connect A -> B -> C;           // 노드/배관 연결 (방향성)
 - `system.altitude` = 프로젝트 **기준 해발(datum)**.
 - 노드의 **`z`** = datum 기준 **상대 고도**. 절대 해발 = `altitude + z`.
 - `elevation` 은 `z` 의 하위호환 별칭(둘 다 인식).
-- `x`, `y` = 평면 좌표(토폴로지 시각화·자동 길이 추정·꺾임각 auto_k 용).
+- `x`, `y` = 평면 좌표(m. 토폴로지 시각화·자동 길이 추정·꺾임각 auto_k 용).
+  둘 다 생략한 노드는 **좌표 미지정**으로 취급한다: 꺾임각(auto_k)·기하 검사에서 제외되고, 화면에서는 자동 배치된다. `x = 0; y = 0;` 처럼 명시하면 원점 좌표로 쓴다.
+  `length` 가 끝점 3D 직선거리보다 짧으면 `SEM008`, `length` 생략인데 끝점 좌표가 없으면 `SEM009`.
 
 ## 블록별 속성
 
@@ -47,7 +49,13 @@ connect A -> B -> C;           // 노드/배관 연결 (방향성)
 `z`, `required_q`(요구 유량), `required_p`(요구 압력), `x`, `y`.
 
 ### pipe
-`start`, `end`(생략 시 connect 체인에서 추론), `length`(0 또는 생략 시 좌표 거리), `diameter`(`auto` 또는 값), `material`, `fittings`, `k_factor`, `roughness`/`c_factor`(명시 시 재질값 override).
+`start`, `end`(생략 시 connect 체인에서 추론), `length`(0 또는 생략 시 경로 길이 = 좌표 거리), `diameter`(`auto` 또는 값), `material`, `fittings`, `k_factor`, `roughness`/`c_factor`(명시 시 재질값 override), `via`(경유점).
+
+**경유점 `via`** — 배관이 꺾이며 지나가는 점 `(x, y, z)`(m, z 는 노드와 같은 datum 상대 고도) 목록:
+```c
+pipe main_pipe { start = p1; end = j1; via = [(45, 0, 8), (45, 0, 5)]; diameter = auto; }
+```
+경로 = [start, via…, end] (양 끝 노드에 x/y 필요, 없으면 `SEM010` 후 무시). `length` 생략 시 경로 길이로 채우고, 지정 길이가 경로보다 짧으면 `SEM008`. 경로의 꺾임마다 엘보 K 가 `auto_k` 에 가산되고, 도면에 엘보·절단 길이로 표시된다([DRAWING](DRAWING.md)).
 
 ### constraint
 `velocity_min`, `velocity_max`, `safety_factor_head`, `safety_factor_npsh`.
@@ -72,9 +80,13 @@ connect A -> B -> C;           // 노드/배관 연결 (방향성)
 ```c
 pipe p { ...; fittings = [elbow_90*2, valve_gate, valve_check]; }
 ```
+위치(선택): `name@2m`·`name@1500mm`·`name@50%` — 배관 시작점 기준 경로 위치. 도면 기호 배치에만 쓰이고 K 와 무관하며, 길이를 벗어나면 `SEM011`. 생략 시 도면에서 균등 배치.
+```c
+pipe p { ...; fittings = [valve_check@3m, valve_gate@6m, flow_meter@50%]; }
+```
 국부손실 `K = k_factor + Σ(부속 K)` 로 계산. 대표 K: `elbow_90`=0.9, `elbow_45`=0.4, `tee_branch`=1.8, `valve_gate`=0.2, `valve_globe`=10, `valve_check`=2.5, `reducer`=0.5 … (전체 34종은 `core/fittings.py`). 대문자 별칭(ELBOW90, GATE_VALVE 등) 호환.
 
-또한 좌표가 있으면 **경로 꺾임각으로 엘보 K(auto_k)** 가 자동 가산된다.
+또한 좌표가 있으면 **경로 꺾임각으로 엘보 K(auto_k)** 가 자동 가산된다(노드에서의 꺾임 + `via` 경유점 꺾임).
 
 ## 단위
 

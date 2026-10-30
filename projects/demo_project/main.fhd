@@ -20,6 +20,15 @@ tank reservoir {
     elevation = 10m;
     volume = 50m3;
     level_max = 1.5m;
+    x = 0;
+    y = 0;
+}
+
+// 공급 펌프 (양정 auto → 사양 선정 대상)
+pump p1 {
+    elevation = 8m;
+    x = 5;
+    y = 0;
 }
 
 // 분기점
@@ -48,31 +57,45 @@ terminal nozzle_B {
 }
 
 // 배관 정의
-pipe main_pipe {
+// 배관 경로: via = 경유점 (x, y, z) m — 꺾이는 곳마다 엘보 K 자동 가산, length 생략 시 경로 길이
+// 부속 위치: name@거리(m, 배관 시작점 기준) 또는 name@비율(%)
+pipe suction {
     start = reservoir;
-    end = j1;
-    length = 60m;
+    end = p1;
+    via = [(0, 0, 8)];
     diameter = auto;
     material = Steel;
+    fittings = [valve_gate@1m, strainer_y@4m];
+}
+
+pipe main_pipe {
+    start = p1;
+    end = j1;
+    via = [(45, 0, 8), (45, 0, 5)];
+    diameter = auto;
+    material = Steel;
+    fittings = [valve_check@3m, valve_gate@6m, pressure_gauge@10m];
 }
 
 pipe branch_A {
     start = j1;
     end = sprinkler_A;
-    length = 35m;
+    via = [(50, 30, 5), (100, 30, 5)];
     diameter = auto;
     material = Steel;
+    fittings = [valve_ball@2m, flow_meter@50%];
 }
 
 pipe branch_B {
     start = j1;
     end = nozzle_B;
-    length = 40m;
+    via = [(50, -30, 5), (100, -30, 5)];
     diameter = auto;
     material = Steel;
+    fittings = [valve_globe@2m];
 }
 
 // 연결 정의
-connect reservoir -> j1;
+connect reservoir -> p1 -> j1;
 connect j1 -> sprinkler_A;
 connect j1 -> nozzle_B;

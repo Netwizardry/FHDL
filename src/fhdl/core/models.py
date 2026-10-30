@@ -122,6 +122,7 @@ class TankEntity:
     level_max: float = 2.0     # m
     x: float = 0.0
     y: float = 0.0
+    has_xy: bool = False        # x/y 를 DSL 에 명시했는가 (미지정이면 0 은 가짜 좌표)
     span: SourceSpan = field(default_factory=SourceSpan)
 
 
@@ -140,6 +141,7 @@ class PumpEntity:
     submerge_ref: str = ""      # 수위 감시 기준 탱크 ID
     x: float = 0.0
     y: float = 0.0
+    has_xy: bool = False        # x/y 를 DSL 에 명시했는가 (미지정이면 0 은 가짜 좌표)
     span: SourceSpan = field(default_factory=SourceSpan)
 
 
@@ -155,6 +157,8 @@ class PipeEntity:
     c_factor: float = 120.0      # HW용
     manual_k: float = 0.0
     auto_k: float = 0.0
+    via: List[Tuple[float, float, float]] = field(default_factory=list)  # 경유점 (x, y, z) m
+    fittings: str = ""          # 부속 명세 원문 (도면 기호 배치용, K 는 manual_k 에 합산됨)
     span: SourceSpan = field(default_factory=SourceSpan)
 
     @property
@@ -168,6 +172,7 @@ class JunctionEntity:
     elevation: float = 0.0
     x: float = 0.0
     y: float = 0.0
+    has_xy: bool = False        # x/y 를 DSL 에 명시했는가 (미지정이면 0 은 가짜 좌표)
     span: SourceSpan = field(default_factory=SourceSpan)
 
 
@@ -181,6 +186,7 @@ class TerminalEntity:
     preset_id: str = ""
     x: float = 0.0
     y: float = 0.0
+    has_xy: bool = False        # x/y 를 DSL 에 명시했는가 (미지정이면 0 은 가짜 좌표)
     span: SourceSpan = field(default_factory=SourceSpan)
 
 

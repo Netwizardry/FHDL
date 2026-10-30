@@ -3,5 +3,6 @@
 PySide6>=6.6
 networkx>=3.2
 numpy>=1.26
+ezdxf>=1.1
 
 # 개발/테스트 (선택): pip install -r requirements-dev.txt

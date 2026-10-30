@@ -12,6 +12,8 @@ from typing import Callable, Dict, List, Optional, Set, Tuple
 import networkx as nx
 
 from .fittings import elbow_k_for_angle
+from .geometry import bend_angles, pipe_route, route_end_dirs
+from .pipe_sizes import KS_DIAMETERS_M
 from .models import (
     AnalysisResult, ConstraintConfig, DiagnosticItem, EntityMap,
     FluidConfig, NodeCalcResult, PipeCalcResult, PipeEntity,
@@ -20,12 +22,8 @@ from .models import (
 
 G = 9.80665  # m/s²
 
-# 표준 관경 테이블 (KS, 내경 m)
-_KS_DIAMETERS_M = [
-    0.0127, 0.0159, 0.0211, 0.0267, 0.0352, 0.0422,
-    0.0528, 0.0686, 0.0825, 0.1023, 0.1263, 0.1503,
-    0.2027, 0.2527, 0.3027, 0.3527, 0.4027, 0.5027,
-]
+# 표준 관경 테이블 (KS, 내경 m) — 단일 진실원은 core.pipe_sizes
+_KS_DIAMETERS_M = KS_DIAMETERS_M
 
 
 # ---------------------------------------------------------------------------
@@ -317,18 +315,6 @@ class HydraulicSolver:
             res[pid] = suction + boost
         return res
 
-    def _dir_vec(self, a: str, b: str):
-        ea = self.em.get_node_entity(a)
-        eb = self.em.get_node_entity(b)
-        if not ea or not eb:
-            return None
-        dx = getattr(eb, "x", 0.0) - getattr(ea, "x", 0.0)
-        dy = getattr(eb, "y", 0.0) - getattr(ea, "y", 0.0)
-        dz = eb.elevation - ea.elevation
-        if abs(dx) < 1e-12 and abs(dy) < 1e-12 and abs(dz) < 1e-12:
-            return None
-        return (dx, dy, dz)
-
     @staticmethod
     def _turn_angle(a, b) -> float:
         dot = a[0]*b[0] + a[1]*b[1] + a[2]*b[2]
@@ -341,14 +327,18 @@ class HydraulicSolver:
 
     def _compute_auto_fitting_k(self, adj: Dict[str, List[str]],
                                rev_adj: Dict[str, List[str]]) -> None:
-        """경로 꺾임각으로 각 하류 배관의 자동 엘보 K(auto_k)를 산정한다.
+        """경로 꺾임각으로 각 배관의 자동 엘보 K(auto_k)를 산정한다.
 
-        노드에서 (들어오는 배관 방향 ↔ 나가는 배관 방향) 사이 각도를 구해,
-        가장 잘 정렬된(직진에 가까운) 진입 배관 기준 엘보 K 를 나가는 배관에 더한다.
-        좌표/고도가 없어 방향을 알 수 없으면 0(영향 없음).
+        1) 배관 내부: 경유점(via)마다 꺾임각의 엘보 K 를 더한다.
+        2) 노드: (들어오는 배관의 마지막 방향 ↔ 나가는 배관의 첫 방향) 사이 각도를 구해,
+           가장 잘 정렬된(직진에 가까운) 진입 배관 기준 엘보 K 를 나가는 배관에 더한다.
+        좌표(x/y)가 없어 방향을 알 수 없으면 0(영향 없음).
         """
+        routes = {}
         for pipe in self.em.pipes.values():
-            pipe.auto_k = 0.0
+            route = pipe_route(self.em, pipe)
+            routes[pipe.entity_id] = route
+            pipe.auto_k = sum(elbow_k_for_angle(a) for a in bend_angles(route)) if route else 0.0
         for nid in self.em.all_node_ids():
             ups = rev_adj.get(nid, [])
             downs = adj.get(nid, [])
@@ -356,14 +346,15 @@ class HydraulicSolver:
                 continue
             for dn in downs:
                 out_pipe = self._get_pipe(nid, dn)
-                v_out = self._dir_vec(nid, dn)
-                if out_pipe is None or v_out is None:
+                if out_pipe is None or routes.get(out_pipe.entity_id) is None:
                     continue
+                v_out = route_end_dirs(routes[out_pipe.entity_id])[0]
                 best_angle = None
                 for up in ups:
-                    v_in = self._dir_vec(up, nid)
-                    if v_in is None:
+                    in_pipe = self._get_pipe(up, nid)
+                    if in_pipe is None or routes.get(in_pipe.entity_id) is None:
                         continue
+                    v_in = route_end_dirs(routes[in_pipe.entity_id])[1]
                     ang = self._turn_angle(v_in, v_out)
                     if best_angle is None or ang < best_angle:
                         best_angle = ang
@@ -803,13 +794,40 @@ class HydraulicSolver:
                 "flow_m3s": pr.flow,
             }
 
+        # AUTO 펌프(양정 미정·커브 없음) 하류 노드: 양정이 0 으로 주입된 사양 선정 전 상태라
+        # 부압·요구압 미달은 펌프 양정으로 채울 몫 → WRN005/WRN006 대상에서 제외한다.
+        sized_later: Set[str] = set()
+        stack = [pid for pid, p in self.em.pumps.items()
+                 if p.head.mode != "MANUAL" and not p.curve_points]
+        while stack:
+            nid = stack.pop()
+            for p in self.em.pipes.values():
+                if p.start_id == nid and p.end_id not in sized_later:
+                    sized_later.add(p.end_id)
+                    stack.append(p.end_id)
+
         # 진공 한계 경고 — 노드 실제 해발의 대기압 기준(절대압 0 이하면 진공)
         for nr in node_results:
+            if nr.node_id in sized_later:
+                continue
             if nr.p_gauge <= -self._atm_pa_at(nr.node_id):
                 self._warn("WRN005",
                            f"노드 '{nr.node_id}': 압력이 진공 한계({nr.p_gauge:.0f}Pa)에 도달했습니다.",
                            SourceSpan(),
                            "극단적인 부압 원인을 확인하세요.")
+
+        # 말단 요구압 미달 — 채울 펌프가 없으므로 실제 설계 결함이다.
+        p_by_node = {nr.node_id: nr.p_gauge for nr in node_results}
+        for tid, term in self.em.terminals.items():
+            p = p_by_node.get(tid)
+            if tid in sized_later or p is None:
+                continue
+            if p < term.required_p * (1 - 1e-3):
+                self._warn("WRN006",
+                           f"말단 '{tid}': 압력 {p:.0f}Pa 가 요구 압력 "
+                           f"{term.required_p:.0f}Pa 에 미달합니다.",
+                           term.span,
+                           "펌프를 추가하거나(head=auto) 관경·공급 수두를 늘리세요.")
 
         return summary
 

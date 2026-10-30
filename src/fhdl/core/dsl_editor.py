@@ -48,6 +48,9 @@ def set_node_attributes(source: str, node_id: str, attrs: Dict[str, str]) -> str
     for key, value in attrs.items():
         if value is None or value == "":
             continue
+        # z 의 하위호환 별칭 elevation 만 쓰는 블록이면 그 줄을 고친다 (두 키 공존 방지)
+        if key == "z" and not re.search(r"\bz\s*=", body) and re.search(r"\belevation\s*=", body):
+            key = "elevation"
         body = _set_attr_in_body(body, key, str(value), indent)
 
     new_block = head + body + tail

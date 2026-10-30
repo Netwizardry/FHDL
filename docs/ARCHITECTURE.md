@@ -18,6 +18,8 @@
    ├─ language.py      언어 정의 단일 진실원 (키워드·노드타입·단위)
    ├─ fittings.py      부속 K-factor 단일 진실원
    ├─ materials.py     배관 재질 물성 단일 진실원
+   ├─ pipe_sizes.py    표준 관경(KS: 호칭 A·inch·내경) 단일 진실원
+   ├─ geometry.py      배관 경로(via)·꺾임각·엘보 테이크오프·단관 절단 길이
    ├─ units.py         표시 단위 변환 (METRIC/IMPERIAL)
    ├─ dsl_editor.py    DSL 텍스트 인플레이스 편집 (Inverse Sync)
    ├─ command.py       콘솔 명령 인터프리터
@@ -29,9 +31,19 @@
    └─ library_db.py    전역 부품 라이브러리 data/library.db (CRUD)
         │
         ▼
+   drawing (도면 생성, GUI 비의존 — PDF/PNG 만 PySide6)
+   ├─ sheet.py         도면 요소(선·다각형·원·글자)·레이어·시트
+   ├─ projection.py    iso/plan/elevation 투영 + 기호 로컬 좌표축
+   ├─ symbols.py       ISO 배관 기호 (배관 방향 기준 로컬 정의)
+   ├─ piping.py        아이소메트릭·평면도·정면도 + BOM·절단표
+   ├─ pid.py           계통도(P&ID) + 장비·라인 목록
+   ├─ frame.py         도곽·표제란·표·방위 표시
+   └─ export_svg / export_dxf(ezdxf) / render_qt(PDF·PNG) / export_step(SolidCraft, 선택)
+        │
+        ▼
    gui (PySide6)
    ├─ main_window.py   5패널 + 하단 콘솔 + 메뉴/단축키 + FSM
-   ├─ panels/          project · editor · viewer(2.5D) · results · diagnostics
+   ├─ panels/          project · editor · viewer(2.5D) · drawing(도면 탭) · results · diagnostics
    ├─ log_console.py   로그 + 명령 입력 콘솔(TUI)
    ├─ library_dialog.py 부품 라이브러리 CRUD 다이얼로그
    └─ highlighter.py   DSL 구문 강조
@@ -39,7 +51,7 @@
 
 ## 핵심 원칙
 
-1. **단일 진실원(SSOT)**: 입력은 `main.fhd`(DSL 텍스트). 언어 키워드·부속·재질은 `core/language.py`·`core/fittings.py`·`core/materials.py` 한 곳에서만 정의하고 parser·highlighter·GUI·DB가 모두 참조한다.
+1. **단일 진실원(SSOT)**: 입력은 `main.fhd`(DSL 텍스트). 언어 키워드·부속(K·도면 기호)·재질·관경은 `core/language.py`·`core/fittings.py`·`core/materials.py`·`core/pipe_sizes.py` 한 곳에서만 정의하고 parser·highlighter·GUI·DB·도면이 모두 참조한다. 도면은 DSL 에서 생성되는 출력물이다.
 2. **엔진/표시 단위 분리**: 내부 계산은 SI(유량 m³/s, 압력 Pa, 길이·수두·관경 m). 표시는 `units.py`가 `unit_system`에 따라 변환.
 3. **엣지의 진실원은 배관**: `pipe.start_id→end_id` 가 토폴로지를 정의. `connect` 는 정합성 검증용(`NET006`).
 4. **결과 캐시**: `state.db` 는 재계산으로 재생성 가능한 파생 캐시. 코드(`main.fhd`)와 체크섬으로 연결.

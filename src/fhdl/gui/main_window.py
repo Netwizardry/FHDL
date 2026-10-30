@@ -14,12 +14,13 @@ from PySide6.QtGui import QAction, QFont, QIcon, QKeySequence
 from PySide6.QtWidgets import (
     QApplication, QDialog, QHBoxLayout, QLabel, QMainWindow,
     QMenuBar, QMessageBox, QProgressBar, QSplitter, QStatusBar,
-    QVBoxLayout, QWidget,
+    QTabWidget, QVBoxLayout, QWidget,
 )
 
 from .panels.project_panel import ProjectPanel
 from .panels.editor_panel import EditorPanel
 from .panels.viewer_panel import TopologyViewer
+from .panels.drawing_panel import DrawingPanel
 from .panels.results_panel import ResultsPanel
 from .panels.diagnostics_panel import DiagnosticsPanel
 from .log_console import LogConsole
@@ -116,8 +117,13 @@ class MainWindow(QMainWindow):
         center_splitter = QSplitter(Qt.Orientation.Horizontal)
         self._editor_panel = EditorPanel()
         self._viewer_panel = TopologyViewer()
+        self._drawing_panel = DrawingPanel()
+        # 토폴로지(편집용 그래프) / 도면(ISO·평면·정면·P&ID) 탭
+        self._view_tabs = QTabWidget()
+        self._view_tabs.addTab(self._viewer_panel, "토폴로지")
+        self._view_tabs.addTab(self._drawing_panel, "도면")
         center_splitter.addWidget(self._editor_panel)
-        center_splitter.addWidget(self._viewer_panel)
+        center_splitter.addWidget(self._view_tabs)
         center_splitter.setSizes([500, 400])
 
         # 하단: 결과 + 진단 수평 분할
@@ -160,6 +166,7 @@ class MainWindow(QMainWindow):
             ("새 프로젝트(&N)", "Ctrl+Shift+N", self._project_panel._new_project),
             ("열기(&O)", "Ctrl+O", self._project_panel._open_project),
             ("저장(&S)", "Ctrl+S", self._save),
+            ("도면 내보내기(&E)…", "Ctrl+Shift+E", self._drawing_panel.export_dialog),
             (None, None, None),
             ("종료(&Q)", "Ctrl+Q", self.close),
         ]:
@@ -230,6 +237,16 @@ class MainWindow(QMainWindow):
         if res.action == "run":
             self._run_analysis()
             return
+        if res.action == "drawing":
+            self._view_tabs.setCurrentWidget(self._drawing_panel)
+            if "view" in res.args:
+                self._drawing_panel.set_view(res.args["view"])
+            else:
+                path = res.args["path"]
+                if not os.path.isabs(path) and self._project_dir:
+                    path = os.path.join(self._project_dir, path)
+                self._drawing_panel.export(path, res.args.get("views"))
+            return
         if res.new_source is not None and res.new_source != self._editor_panel.get_source():
             self._editor_panel.set_source(res.new_source)
             if res.rerun:
@@ -264,6 +281,11 @@ class MainWindow(QMainWindow):
         self._viewer_panel.node_double_clicked.connect(self._on_node_edit)
         self._viewer_panel.pipe_double_clicked.connect(self._on_pipe_edit)
         self._viewer_panel.connection_requested.connect(self._on_connection_requested)
+        # 도면 편집 → DSL 역반영 (토폴로지와 같은 핸들러 + 드래그 좌표 이동)
+        self._drawing_panel.node_double_clicked.connect(self._on_node_edit)
+        self._drawing_panel.pipe_double_clicked.connect(self._on_pipe_edit)
+        self._drawing_panel.node_moved.connect(self._on_node_moved)
+        self._drawing_panel.message.connect(self._log)
         # 하단 콘솔 명령어 입력 → 실행
         self._log_console.command_entered.connect(self._execute_command)
 
@@ -334,6 +356,7 @@ class MainWindow(QMainWindow):
         self._results_panel.update_result(r)
         if r.entity_map:
             self._viewer_panel.update_from_result(r)
+            self._drawing_panel.update_from_result(r, self._project_name())
 
     def _on_text_changed(self, text: str):
         if self._state not in (AppState.VALIDATING, AppState.SOLVING):
@@ -423,6 +446,17 @@ class MainWindow(QMainWindow):
         else:
             new_src = set_node_attributes(src, node_id, dlg.get_values())
             self._log(f"노드 '{node_id}' 속성 수정", "INFO")
+        self._editor_panel.set_source(new_src)
+        self._run_analysis()
+
+    def _project_name(self) -> str:
+        return os.path.basename(self._project_dir.rstrip("/\\")) if self._project_dir else ""
+
+    def _on_node_moved(self, node_id: str, attrs: dict):
+        """도면(평면도·정면도) 노드 드래그 → DSL 좌표 갱신 후 재해석."""
+        from ..core.dsl_editor import set_node_attributes
+        new_src = set_node_attributes(self._editor_panel.get_source(), node_id, attrs)
+        self._log(f"노드 '{node_id}' 좌표 이동: " + ", ".join(f"{k}={v}" for k, v in attrs.items()), "INFO")
         self._editor_panel.set_source(new_src)
         self._run_analysis()
 
@@ -595,6 +629,7 @@ class MainWindow(QMainWindow):
         self._last_result = r
         if r.entity_map:
             self._viewer_panel.update_from_result(r)
+            self._drawing_panel.update_from_result(r, self._project_name())
 
         # 결과 캐시 저장 (state.db) — main.fhd 는 보존(명시적 저장 시에만 기록)
         if self._project_dir:

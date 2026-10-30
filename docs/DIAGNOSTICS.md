@@ -18,6 +18,10 @@
 | `SEM005` | 노드 절대 해발(datum+z)이 범위(−500~10000m) 초과 | WARNING |
 | `SEM006` | 유체 온도 범위(0~100°C) 초과 | WARNING |
 | `SEM007` | 배관 길이 ≤ 0 | ERROR |
+| `SEM008` | 양 끝점 x/y 명시 + `length` < 경로 길이(via 경로 또는 끝점 3D 직선거리, 물리적으로 불가능) | WARNING |
+| `SEM009` | `length` 생략(좌표 추정)인데 끝점 x/y 미지정 | WARNING |
+| `SEM010` | `via` 항목이 `(x, y, z)` 형식이 아님 / 끝점 x/y 가 없어 via 무시 | WARNING |
+| `SEM011` | 부속 위치(`@`)가 배관 길이를 벗어남 | WARNING |
 
 ## 네트워크 (NET) — solver
 | 코드 | 의미 | 심각도 |
@@ -44,6 +48,9 @@
 | `WRN003` | NPSHa < NPSHr × 안전율 (캐비테이션 위험) |
 | `WRN004` | 수충격 위험 지수 > 0.8 |
 | `WRN005` | 압력이 진공 한계(해당 노드 대기압의 음수) 도달 |
+| `WRN006` | 말단 압력이 `required_p` 에 미달 |
+
+> WRN005·WRN006 은 AUTO 펌프(양정 auto·커브 없음) **하류** 노드에는 내지 않는다. 그 구간은 양정이 0 으로 주입된 사양 선정 전 상태이고, 부족분은 권장 펌프 양정(`recommended_pump_head`)으로 산정된다.
 
 ## 상태(status) 판정 (`pipeline`)
 

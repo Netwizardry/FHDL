@@ -13,12 +13,13 @@
 FHDL/
 ├── CLAUDE.md              # 이 파일
 ├── README.md             # 설치·빠른 시작
-├── docs/                 # 코드 기준 문서 (INDEX·LANGUAGE·SOLVER·DATA_MODEL·GUI·COMMANDS·DIAGNOSTICS)
+├── docs/                 # 코드 기준 문서 (INDEX·LANGUAGE·SOLVER·DATA_MODEL·GUI·DRAWING·COMMANDS·DIAGNOSTICS)
 ├── src/fhdl/
-│   ├── core/             # 엔진 + 단일 진실원(language·fittings·materials·units) + dsl_editor·command·project_io
+│   ├── core/             # 엔진 + 단일 진실원(language·fittings·materials·pipe_sizes·units) + geometry·dsl_editor·command·project_io
 │   ├── db/               # project_db (프로젝트별), library_db (전역 부품 CRUD)
+│   ├── drawing/          # 도면 생성 (ISO·평면·정면·P&ID → SVG·PDF·DXF·STEP)
 │   └── gui/              # main_window + panels/ (5패널) + log_console + library_dialog
-├── tests/                # pytest (102개)
+├── tests/                # pytest (152개)
 ├── resources/styles/     # dark_theme.qss
 ├── data/library.db       # 전역 부품 라이브러리
 ├── projects/             # 프로젝트별 작업공간
@@ -35,7 +36,7 @@ FHDL/
 2. `docs/LANGUAGE.md` / `docs/SOLVER.md` — 언어·계산 규범
 3. `docs/ARCHITECTURE.md` / `docs/DATA_MODEL.md` — 구조·영속성 규범
 4. `docs/DIAGNOSTICS.md` / `docs/GUI.md` / `docs/COMMANDS.md`
-5. 단일 진실원 모듈: `core/language.py`(키워드), `core/fittings.py`(부속), `core/materials.py`(재질)
+5. 단일 진실원 모듈: `core/language.py`(키워드), `core/fittings.py`(부속 K·도면 기호), `core/materials.py`(재질), `core/pipe_sizes.py`(관경)
 
 ---
 
@@ -106,9 +107,11 @@ FHDL/
 - [x] 하단 명령 콘솔(TUI) + 단축키
 - [x] 단일 진실원화(language·fittings·materials) + 코드 기준 문서 재작성
 - [x] 성능 최적화(1000노드<1s)·저널 복구·정확도 벤치마크·패키징·아이콘
+- [x] 기하 검증(SEM008~011)·배관 경유점 via·부속 위치(@)·숨은 엘보 K
+- [x] 배관 도면 생성(ISO 6412-2 아이소메트릭·평면·정면·P&ID) + ISO 기호·BOM·절단표 + PDF·DXF·SVG·STEP(SolidCraft, 선택) — `docs/DRAWING.md`
 - [ ] **(차후 대형) 복합 루프망 Hardy-Cross** — `docs/ROADMAP.md` §1
 - [ ] **(차후 대형) 수충격 MOC 정밀 해석** — `docs/ROADMAP.md` §2
-- [ ] (로드맵) CAD/BIM 연동, 다국어(i18n)
+- [ ] (로드맵) CAD/BIM 양방향 연동(도면→DSL 가져오기), 다국어(i18n)
 
 ---
 

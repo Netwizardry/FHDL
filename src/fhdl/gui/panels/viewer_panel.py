@@ -328,7 +328,7 @@ class TopologyViewer(QWidget):
         # DSL에 x/y가 명시된 노드는 그 값으로 덮어씀
         for ent in (list(em.tanks.values()) + list(em.pumps.values()) +
                     list(em.junctions.values()) + list(em.terminals.values())):
-            if hasattr(ent, "x") and (ent.x != 0 or ent.y != 0):
+            if getattr(ent, "has_xy", False):
                 pos[ent.entity_id] = (float(ent.x), float(ent.y))
 
         return pos

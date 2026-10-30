@@ -27,6 +27,8 @@ HELP_TEXT = [
     "  unlink <A> <B>                                           A→B 연결 삭제",
     "  constraint key=value ...                                 제약(유속·안전율) 설정",
     "  ls                                                       노드/배관 목록",
+    "  dwg <iso|plan|elevation|pid>                             도면 탭에서 해당 도면 보기",
+    "  dwg export <파일.pdf|dxf|svg|png|step> [views=iso,plan]  도면 내보내기 (pdf/dxf 기본 전체)",
     "  run | save | clear | help                                해석/저장/로그지우기/도움말",
 ]
 
@@ -35,7 +37,8 @@ HELP_TEXT = [
 class CommandResult:
     new_source: Optional[str] = None      # 에디터에 반영할 새 소스 (없으면 None)
     messages: List[str] = field(default_factory=list)
-    action: Optional[str] = None          # 'run' | 'save' | 'clear'
+    action: Optional[str] = None          # 'run' | 'save' | 'clear' | 'drawing'
+    args: dict = field(default_factory=dict)  # action 인자 (drawing: view 또는 path·views)
     level: str = "INFO"                    # 메시지 레벨
     rerun: bool = True                     # new_source 반영 후 자동 재해석 여부
 
@@ -74,6 +77,8 @@ def execute_command(source: str, command: str, entity_map=None) -> CommandResult
         return CommandResult(action="clear", rerun=False)
     if verb in ("ls", "list"):
         return _list(entity_map)
+    if verb in ("dwg", "drawing"):
+        return _drawing(pos, kv)
 
     # --- DSL 변형 ---
     if verb == "add":
@@ -138,6 +143,29 @@ def execute_command(source: str, command: str, entity_map=None) -> CommandResult
         return CommandResult(new, ["제약 조건 갱신"], level="OK")
 
     return err(f"알 수 없는 명령 '{verb}'. 'help' 입력.")
+
+
+def _drawing(pos, kv) -> CommandResult:
+    from ..drawing import FORMATS, VIEWS
+    usage = "사용법: dwg <iso|plan|elevation|pid> | dwg export <파일> [views=iso,plan]"
+    if not pos:
+        return CommandResult(messages=[usage], level="ERROR", rerun=False)
+    if pos[0].lower() in VIEWS:
+        return CommandResult(action="drawing", args={"view": pos[0].lower()},
+                             messages=[f"도면 보기: {pos[0].lower()}"], rerun=False)
+    if pos[0].lower() == "export" and len(pos) >= 2:
+        path = pos[1]
+        ext = path.rsplit(".", 1)[-1].lower() if "." in path else ""
+        if ext not in FORMATS:
+            return CommandResult(messages=[f"지원 형식: {', '.join(FORMATS)}"], level="ERROR", rerun=False)
+        views = [v for v in kv.get("views", "").split(",") if v]
+        bad = [v for v in views if v not in VIEWS]
+        if bad:
+            return CommandResult(messages=[f"알 수 없는 도면: {', '.join(bad)} (가능: {', '.join(VIEWS)})"],
+                                 level="ERROR", rerun=False)
+        return CommandResult(action="drawing", args={"path": path, "views": views or None},
+                             messages=[f"도면 내보내기 → {path}"], rerun=False)
+    return CommandResult(messages=[usage], level="ERROR", rerun=False)
 
 
 def _ensure_connect(source: str, a: str, b: str) -> str:

@@ -12,6 +12,7 @@
 | [SOLVER](SOLVER.md) | 2-Pass 수리 해석, 마찰/국부손실, 펌프, NPSHa |
 | [DATA_MODEL](DATA_MODEL.md) | 엔티티·결과 모델, DB 스키마, 저장/로드/복원 |
 | [GUI](GUI.md) | 5패널·콘솔·그래프 편집·단축키 |
+| [DRAWING](DRAWING.md) | 도면 생성(ISO 아이소메트릭·평면·정면·P&ID)·ISO 기호·BOM·내보내기(PDF·DXF·SVG·STEP) |
 | [COMMANDS](COMMANDS.md) | 하단 명령 콘솔(TUI) 레퍼런스 |
 | [DIAGNOSTICS](DIAGNOSTICS.md) | 진단 코드(SYN/SEM/NET/CAL/WRN) |
 | [ROADMAP](ROADMAP.md) | 차후 대형 작업(Hardy-Cross 루프망, 수충격 MOC) |

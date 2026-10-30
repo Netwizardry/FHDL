@@ -11,7 +11,7 @@ K-factor 출처: Crane TP-410 / 일반 수리편람 대표값.
 from __future__ import annotations
 
 import re
-from typing import Dict, List, Tuple
+from typing import Dict, List, NamedTuple, Optional, Tuple
 
 # 정본 부속 키(소문자) → (K, 설명)
 FITTINGS: Dict[str, Tuple[float, str]] = {
@@ -56,6 +56,26 @@ FITTINGS: Dict[str, Tuple[float, str]] = {
     "exit":            (1.00, "출구 손실"),
 }
 
+# 정본 부속 키 → 도면 기호 ID (drawing.symbols 에서 정의). 기호표 기준:
+# ISO 6412-2 아이소메트릭 배관 기호(밸브=나비넥타이형, 계기=원형 태그).
+# 없는 키는 도면에 기호를 그리지 않는다(엘보·티는 경로 꺾임/분기에서 자동 표시).
+FITTING_SYMBOLS: Dict[str, str] = {
+    "reducer": "reducer", "union": "union", "coupling": "coupling",
+    "cap_plug": "cap",
+    "valve_gate": "valve_gate", "valve_globe": "valve_globe",
+    "valve_ball": "valve_ball", "valve_butterfly": "valve_butterfly",
+    "valve_needle": "valve_needle", "valve_check": "valve_check",
+    "valve_foot": "valve_check", "valve_relief": "valve_relief",
+    "valve_prv": "valve_prv", "valve_solenoid": "valve_solenoid",
+    "valve_air": "valve_air", "valve_drain": "valve_gate",
+    "sample_valve": "valve_needle",
+    "flange_joint": "flange", "insul_flange": "flange",
+    "expansion_joint": "expansion_joint", "flexible_joint": "expansion_joint",
+    "strainer_y": "strainer", "strainer_basket": "strainer",
+    "pressure_gauge": "inst_pi", "flow_meter": "inst_fe",
+    "thermometer": "inst_ti", "sight_glass": "sight_glass",
+}
+
 # 별칭(대문자/대체 표기) → 정본 키
 _ALIASES: Dict[str, str] = {
     "ELBOW90": "elbow_90", "ELBOW45": "elbow_45",
@@ -90,8 +110,10 @@ def fitting_k(name: str) -> float:
 
 
 # 항목 토큰: elbow_90 / elbow_90*2 / 2*elbow_90 / elbow_90 x2 / elbow_90:2
+# 위치(선택): elbow_90@2m / valve_gate@1500mm / valve_gate@50% (배관 시작점 기준)
 _COUNT_RE = re.compile(
-    r"^\s*(?:(\d+)\s*[\*xX]\s*)?([A-Za-z_]\w*)(?:\s*[\*xX:]\s*(\d+))?\s*$"
+    r"^\s*(?:(\d+)\s*[\*xX]\s*)?([A-Za-z_]\w*)(?:\s*[\*xX:]\s*(\d+))?"
+    r"\s*(?:@\s*([+-]?[\d.]+)\s*(m|mm|%)?)?\s*$"
 )
 
 
@@ -119,6 +141,42 @@ def parse_fittings(spec: str) -> List[Tuple[str, int]]:
         count = int(pre or post or 1)
         items.append((name, max(count, 1)))
     return items
+
+
+class FittingPlacement(NamedTuple):
+    name: str                       # 입력 표기(대소문자 보존)
+    canon: str                      # 정본 키 ("" = 미정의)
+    count: int
+    at_m: Optional[float] = None    # 배관 시작점 기준 경로 거리(m)
+    at_frac: Optional[float] = None  # 경로 길이 비율(0~1)
+
+
+def parse_fitting_placements(spec: str) -> List[FittingPlacement]:
+    """피팅 명세 → 위치 포함 목록. 위치 생략 시 at_m/at_frac 는 None."""
+    if not spec:
+        return []
+    s = spec.strip().strip("[]{}").strip()
+    out: List[FittingPlacement] = []
+    for raw in s.split(","):
+        m = _COUNT_RE.match(raw)
+        if not raw.strip() or not m:
+            continue
+        pre, name, post, pos, unit = m.groups()
+        at_m = at_frac = None
+        if pos is not None:
+            v = float(pos)
+            if unit == "%":
+                at_frac = min(max(v / 100.0, 0.0), 1.0)
+            else:
+                at_m = v / 1000.0 if unit == "mm" else v
+        out.append(FittingPlacement(name, _canonical(name), max(int(pre or post or 1), 1),
+                                    at_m, at_frac))
+    return out
+
+
+def fitting_symbol(name: str) -> str:
+    """부속의 도면 기호 ID ("" = 기호 없음)."""
+    return FITTING_SYMBOLS.get(_canonical(name), "")
 
 
 def sum_fittings_k(spec: str) -> float:

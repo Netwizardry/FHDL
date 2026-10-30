@@ -6,7 +6,8 @@
 
 - `FluidConfig` — unit_system, fluid_type, temp, altitude, friction_model + 물성 property.
 - `TankEntity` / `PumpEntity` / `JunctionEntity` / `TerminalEntity` — 공통 `entity_id, elevation(z), x, y, span`.
-- `PipeEntity` — `start_id, end_id, length, diameter(SizingState), material, roughness, c_factor, manual_k, auto_k`; `total_k = manual_k + auto_k`.
+- `PipeEntity` — `start_id, end_id, length, diameter(SizingState), material, roughness, c_factor, manual_k, auto_k, via, fittings`; `total_k = manual_k + auto_k`. `via` = 경유점 `[(x, y, z)]`(m), `fittings` = 부속 명세 원문(도면 기호 배치용 — K 는 이미 `manual_k` 에 합산).
+- 노드 엔티티(Tank·Pump·Junction·Terminal) — `x, y` 와 `has_xy`(DSL 에 x/y 를 명시했는가). `has_xy=False` 인 노드의 0 은 가짜 좌표라 꺾임각·기하 검사·도면 실좌표에서 제외된다.
 - `ConstraintConfig` — velocity_min/max, safety_factor_head/npsh.
 - `EntityMap` — 타입별 dict + `connections: List[(from,to)]`.
 - 결과: `NodeCalcResult`(좌표·타입·수두·압력·NPSHa·절대해발·대기압), `PipeCalcResult`(start/end·유량·유속·손실·관경·K·수충격·상태), `SystemSummary`.

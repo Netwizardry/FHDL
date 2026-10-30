@@ -7,9 +7,11 @@ FHDL 의미 분석기 (Semantic Analyzer).
 from __future__ import annotations
 
 import math
+import re
 from typing import Any, Dict, List, Optional, Tuple
 
-from .fittings import sum_fittings_k
+from .fittings import parse_fitting_placements, sum_fittings_k
+from .geometry import pipe_route, polyline_length
 from .materials import material_properties
 from .models import (
     ASTNode, ComponentASTNode, ConnectASTNode, ConstraintASTNode,
@@ -81,6 +83,9 @@ class SemanticAnalyzer:
 
         # 2차: 참조 무결성 + 중복 ID
         self._check_references(em)
+
+        # 3차: 배관 길이 ↔ 끝점 좌표 기하 정합성
+        self._check_pipe_geometry(em)
 
         return em, self._diags
 
@@ -158,6 +163,7 @@ class SemanticAnalyzer:
                 level_max=self._as_si(a.get("level_max", (2.0, "m"))),
                 x=self._as_float(a.get("x", 0.0), ""),
                 y=self._as_float(a.get("y", 0.0), ""),
+                has_xy=("x" in a or "y" in a),
                 span=span,
             )
 
@@ -180,6 +186,7 @@ class SemanticAnalyzer:
                 submerge_ref=str(a.get("submerge_ref", "")),
                 x=self._as_float(a.get("x", 0.0), ""),
                 y=self._as_float(a.get("y", 0.0), ""),
+                has_xy=("x" in a or "y" in a),
                 span=span,
             )
 
@@ -191,6 +198,7 @@ class SemanticAnalyzer:
                 elevation=elev,
                 x=self._as_float(a.get("x", 0.0), ""),
                 y=self._as_float(a.get("y", 0.0), ""),
+                has_xy=("x" in a or "y" in a),
                 span=span,
             )
 
@@ -206,6 +214,7 @@ class SemanticAnalyzer:
                 preset_id=str(a.get("preset_id", "")),
                 x=self._as_float(a.get("x", 0.0), ""),
                 y=self._as_float(a.get("y", 0.0), ""),
+                has_xy=("x" in a or "y" in a),
                 span=span,
             )
 
@@ -243,6 +252,8 @@ class SemanticAnalyzer:
             if fittings_spec:
                 manual_k += sum_fittings_k(fittings_spec)
 
+            via = self._parse_via(a.get("via", ""), cid, span)
+
             em.pipes[cid] = PipeEntity(
                 entity_id=cid,
                 start_id=start,
@@ -253,6 +264,8 @@ class SemanticAnalyzer:
                 roughness=roughness,
                 c_factor=c_factor,
                 manual_k=manual_k,
+                via=via,
+                fittings=fittings_spec,
                 span=span,
             )
 
@@ -300,6 +313,70 @@ class SemanticAnalyzer:
                     self._err("SEM002",
                               f"connect 구문의 '{cid}'가 정의되지 않은 ID입니다.", SourceSpan(),
                               f"'{cid}'를 먼저 선언하세요.")
+
+    def _check_pipe_geometry(self, em: EntityMap):
+        """배관 길이를 끝점 좌표·경유점(via) 경로와 대조한다.
+
+        - SEM008: 경로가 정의됐는데 length < 경로 길이 (via 없으면 3D 직선거리) — 불가능
+        - SEM009: length 생략(좌표 추정)인데 끝점 x/y 미지정 → 0 좌표로 잘못 추정됨
+        - SEM010: via 를 줬지만 끝점 x/y 가 없어 경로를 만들 수 없음 → via 무시
+        - SEM011: 부속 위치(@)가 배관 길이를 벗어남
+        length 를 생략하고 경로가 정의되면 length = 경로 길이로 채운다.
+        """
+        for pipe in em.pipes.values():
+            a = em.get_node_entity(pipe.start_id)
+            b = em.get_node_entity(pipe.end_id)
+            if a is None or b is None:
+                continue
+            route = pipe_route(em, pipe)
+            if route is None:
+                missing = [n.entity_id for n in (a, b) if not n.has_xy]
+                if pipe.via:
+                    self._warn("SEM010",
+                               f"배관 '{pipe.entity_id}'에 via 가 있지만 끝점 "
+                               f"{', '.join(missing)} 의 x/y 좌표가 없어 경로를 만들 수 없습니다.",
+                               pipe.span, "끝점 노드에 x, y 를 지정하세요.")
+                    pipe.via = []
+                if pipe.length <= 0:
+                    self._warn("SEM009",
+                               f"배관 '{pipe.entity_id}'의 length 가 생략됐지만 끝점 "
+                               f"{', '.join(missing)} 의 x/y 좌표가 없어 길이 추정이 부정확합니다.",
+                               pipe.span, "length 를 지정하거나 끝점에 x, y 를 지정하세요.")
+            else:
+                route_len = polyline_length(route)
+                if pipe.length <= 0:
+                    pipe.length = max(route_len, 0.1)
+                elif pipe.length < route_len * (1 - 1e-3):
+                    what = "경유점(via) 경로 길이" if pipe.via else "끝점 사이 3D 직선거리"
+                    self._warn("SEM008",
+                               f"배관 '{pipe.entity_id}'의 length {pipe.length:.2f}m 가 "
+                               f"{what} {route_len:.2f}m 보다 짧습니다.",
+                               pipe.span, "length 또는 끝점 좌표(x, y, z)·via 를 확인하세요.")
+            if pipe.length > 0:
+                for fp in parse_fitting_placements(pipe.fittings):
+                    if fp.at_m is not None and fp.at_m > pipe.length * (1 + 1e-3):
+                        self._warn("SEM011",
+                                   f"배관 '{pipe.entity_id}'의 부속 {fp.name}@{fp.at_m:g}m 가 "
+                                   f"배관 길이 {pipe.length:.2f}m 를 벗어납니다.",
+                                   pipe.span, "위치를 배관 길이 이내로 지정하세요.")
+
+    def _parse_via(self, raw: Any, cid: str, span: SourceSpan) -> list:
+        """via = [(x, y, z), ...] → [(x, y, z) m]. 형식 오류 항목은 SEM010 으로 버린다."""
+        if not raw or not isinstance(raw, str):
+            return []
+        pts = []
+        for grp in re.findall(r"\(([^()]*)\)", raw):
+            vals = [v.strip() for v in grp.split(",")]
+            try:
+                xyz = tuple(float(re.sub(r"m$", "", v)) for v in vals)
+            except ValueError:
+                xyz = ()
+            if len(xyz) != 3:
+                self._warn("SEM010", f"배관 '{cid}'의 via 항목 '({grp})' 은 (x, y, z) 형식이 아닙니다.",
+                           span, "via = [(x, y, z), ...] 형식으로 지정하세요 (단위 m).")
+                continue
+            pts.append((xyz[0], xyz[1], xyz[2]))
+        return pts
 
     # ------------------------------------------------------------------
     # 값 변환 헬퍼
