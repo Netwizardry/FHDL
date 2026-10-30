@@ -1,5 +1,10 @@
 """도곽·표제란·자재표(BOM)·단관 절단표·방위 표시.
 
+양식 두 가지:
+- 회사 양식(기본): 사용자 도면 양식 DXF 에서 추출한 `data/iso_form.json` (drawing/dxf_form.py 로
+  재생성). 원본 선·글자를 그대로 그리고 표제란 칸·BOM 행·NOTES 를 채운다.
+- 간이 양식: 아래 draw_border/draw_title_block/draw_table (양식 데이터가 없을 때, 계통도).
+
 배치는 참고 도면 양식(archive/dxf 도면FORM)을 따른다: 오른쪽 열에 BILL OF MATERIAL,
 그 아래 단관 절단표·NOTES, 아래쪽 표제란, 도면 영역 오른쪽 위에 방위(N) 표시.
 용지는 A3 가로(420×297mm), 여백 10mm.
@@ -7,8 +12,11 @@
 from __future__ import annotations
 
 import datetime as _dt
+import json
 import math
-from typing import List, Optional, Sequence, Tuple
+import os
+from functools import lru_cache
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from .sheet import Line, Polyline, Sheet, Text
 
@@ -139,3 +147,56 @@ def draw_north_arrow(sheet: Sheet, center: Tuple[float, float], north_dir: Tuple
                         (head[0] - nx * 3.2 - px * 1.3, head[1] - ny * 3.2 - py * 1.3)],
                        layer="NORTH", closed=True, fill=True))
     sheet.add(Text((cx, cy), "N", height=size * 0.75, layer="NORTH", anchor="middle", valign="middle"))
+
+
+# ---------------------------------------------------------------------------
+# 회사 양식 (도면 양식 DXF 추출 데이터)
+# ---------------------------------------------------------------------------
+
+FORM_PATH = os.path.join(os.path.dirname(__file__), "data", "iso_form.json")
+
+
+@lru_cache(maxsize=1)
+def company_form() -> Optional[dict]:
+    try:
+        with open(FORM_PATH, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
+
+
+def draw_company_form(sheet: Sheet, form: dict, fields: Dict[str, str], bom: List[Sequence[str]],
+                      notes: List[str]) -> None:
+    """양식 선·글자 + 채움 칸(fields) + BOM 행(CODE, SIZE, Q'TY, CLASS, DESCRIPTION) + NOTES."""
+    for x1, y1, x2, y2 in form["lines"]:
+        sheet.add(Line((x1, y1), (x2, y2), layer="BORDER", width=0.25))
+    for p in form["polys"]:
+        sheet.add(Polyline([tuple(q) for q in p["pts"]], layer="BORDER", closed=p["closed"],
+                           fill=p["fill"], width=0.25))
+    for t in form["texts"]:
+        sheet.add(Text(tuple(t["pos"]), t["text"], height=t["height"], layer="BORDER",
+                       anchor=t["anchor"], valign=t["valign"], angle=t["angle"]))
+    for name, f in form["fields"].items():
+        value = fields.get(name, "-" if name in ("area", "unit", "pid_no", "line_no") else "")
+        if value:
+            sheet.add(Text(tuple(f["pos"]), str(value), height=f["height"], layer="TEXT",
+                           anchor=f["anchor"], valign=f["valign"]))
+    b = form["bom"]
+    xs = b["x"]
+    shown = list(bom[: b["rows"]])
+    if len(bom) > b["rows"]:
+        shown[-1] = ["…", "", "", "", f"외 {len(bom) - b['rows'] + 1}건"]
+    for i, row in enumerate(shown):
+        y = b["top"] - (i + 0.5) * b["row_h"]
+        for c, cell in enumerate(row[:5]):
+            w = xs[c + 1] - xs[c]
+            sheet.add(Text((xs[c] + 1.0, y), _fit(str(cell), w - 1.5, 1.45), height=2.1,
+                           layer="TEXT", valign="middle"))
+    n = form["notes"]
+    y = n["y"]
+    for i, note in enumerate(notes, 1):
+        for j, chunk in enumerate(_wrap(note, int(n["width"] / 1.6))):
+            if y < n["bottom"]:
+                return
+            sheet.add(Text((n["x"], y), (f"{i}. " if j == 0 else "   ") + chunk, height=2.0, layer="TEXT"))
+            y -= n["line_h"]

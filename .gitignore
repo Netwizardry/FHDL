@@ -12,3 +12,6 @@ venv/
 # 프로젝트 런타임 산출물
 projects/*/state.db
 projects/*/outputs/
+
+# Windows 다운로드 표식 (NTFS 대체 스트림이 WSL 에서 파일로 보임)
+*:Zone.Identifier

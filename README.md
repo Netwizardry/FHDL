@@ -12,7 +12,7 @@
 - **Auto-sizing** — 유속 제약을 만족하는 표준 관경(KS) 자동 선정
 - **마찰 모델** — Darcy-Weisbach(Swamee-Jain) / Hazen-Williams, 재질별 물성 자동 적용
 - **부속(밸브·엘보·티·레듀서) 국부손실** + 꺾임각 자동 엘보 K (배관 경유점 `via` 포함)
-- **배관 도면 자동 생성** — ISO 아이소메트릭(ISO 6412-2 스타일)·평면도·정면도·계통도(P&ID), ISO 기호·치수·BOM·단관 절단 길이·표제란, **PDF·DXF·SVG·PNG** 내보내기 (선택: SolidCraft 로 STEP 3D)
+- **배관 도면 자동 생성** — ISO 아이소메트릭(ISO 6412-2 스타일)·평면도·정면도·계통도(P&ID), 기호표 DXF 에서 이식한 ISO 기호·회사 도면 양식(표제란·BOM), 치수·단관 절단 길이, **PDF·DXF·SVG·PNG** 내보내기 (선택: SolidCraft 로 STEP 3D)
 - **펌프 양정 주입**(실제 에너지원) 및 탱크/펌프 사양 선정(안전율)
 - **해발 datum**: 노드 z는 기준 해발 상대값, 해발·온도로 대기압·물성 산정
 - **NPSHa·캐비테이션·수충격·진공 한계** 진단, 네트워크 무결성(NET) 검사
@@ -137,7 +137,7 @@ FHDL/
 ├── resources/styles/       # dark_theme.qss
 ├── data/library.db         # 전역 부품 라이브러리 (자동 생성)
 ├── projects/               # 프로젝트별 작업공간 (main.fhd, state.db, project.fhproj)
-├── tests/                  # pytest (152개)
+├── tests/                  # pytest (161개)
 ├── docs/                   # 코드 기준 문서 (INDEX·LANGUAGE·SOLVER·…)
 └── archive/                # 구 명세·감사·v0.1 보관
 ```
@@ -147,7 +147,7 @@ FHDL/
 ## 테스트
 
 ```bash
-pytest -q     # 152개 (파서·솔버·네트워크·재질·부속·경로·도면·DB·프로젝트IO·명령콘솔 등)
+pytest -q     # 161개 (파서·솔버·네트워크·재질·부속·경로·도면·DXF 이식·DB·프로젝트IO·명령콘솔 등)
 ```
 
 ---

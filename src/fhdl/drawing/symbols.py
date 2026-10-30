@@ -1,5 +1,10 @@
 """ISO 배관 도면 기호.
 
+기호 형상의 1차 출처는 **사용자 기호표 DXF 에서 추출한 데이터**(`data/iso_symbols.json`,
+`drawing/dxf_symbols.py` 로 재생성)다. 아이소메트릭에서는 배관 축·평면 축이 맞는 기호표
+방향 변형을 그대로 쓰고, 그 밖(평면도·정면도·계통도·사선 배관)에는 추출한 로컬 형상을 쓴다.
+데이터에 없는 기호(스트레이너·계기 태그·구동부 등)만 아래 SYMBOLS 정의를 쓴다.
+
 기호는 배관 방향 기준 로컬 좌표 (a, b) 로 한 번만 정의한다. a = 배관 진행 방향,
 b = 배관이 놓인 평면에서 a 에 수직인 방향, 단위 = 기호 크기의 절반.
 그릴 때 projection.symbol_frame 이 (a, b) 축의 도면 방향을 정하므로, 같은 정의가
@@ -21,8 +26,11 @@ b = 배관이 놓인 평면에서 a 에 수직인 방향, 단위 = 기호 크기
 """
 from __future__ import annotations
 
+import json
 import math
-from typing import Dict, List, Sequence, Tuple
+import os
+from functools import lru_cache
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from .sheet import Circle, Line, Polyline, Text
 
@@ -87,11 +95,50 @@ SYMBOLS: Dict[str, List[tuple]] = {
                ("L", [(1.1, -0.7), (1.1, 0.7)])],
 }
 
-SYMBOL_LAYER = {k: ("INSTR" if k.startswith("inst_") else
-                    "FLOW" if k == "flow_arrow" else
-                    "EQPT" if k == "nozzle" else
-                    "VALVE" if k.startswith("valve_") else "FITTING")
-                for k in SYMBOLS}
+def symbol_layer(sym_id: str) -> str:
+    return ("INSTR" if sym_id.startswith("inst_") else
+            "FLOW" if sym_id == "flow_arrow" else
+            "EQPT" if sym_id == "nozzle" else
+            "VALVE" if sym_id.startswith("valve_") else "FITTING")
+
+
+IMPORTED_PATH = os.path.join(os.path.dirname(__file__), "data", "iso_symbols.json")
+
+
+@lru_cache(maxsize=1)
+def imported_symbols() -> Dict[str, dict]:
+    """기호표 DXF 추출 데이터 (없거나 깨졌으면 빈 dict → 내장 정의 사용)."""
+    try:
+        with open(IMPORTED_PATH, encoding="utf-8") as f:
+            data = json.load(f)
+        return data.get("symbols", {})
+    except (OSError, ValueError):
+        return {}
+
+
+def available_symbols() -> List[str]:
+    return sorted(set(SYMBOLS) | set(imported_symbols()))
+
+
+def _pick_variant(sym: dict, axes) -> Tuple[Optional[list], bool]:
+    """(방향 변형 경로, 배관 축 방향으로 뒤집어야 하는지). 없으면 (None, False)."""
+    a, sign, b = axes
+    var = sym.get("variants", {})
+    if sym.get("directional"):
+        flip = "-" if sign == "+" else "+"
+        for key, mirror in ((f"{sign}{a}/{b}", False), (f"{flip}{a}/{b}", True)):
+            if key in var:
+                return var[key], mirror
+        for key, paths in var.items():          # 다른 평면에 그려진 같은 배관 축 변형
+            if key[1:].startswith(a + "/"):
+                return paths, key[0] != sign
+        return None, False
+    if f"{a}/{b}" in var:
+        return var[f"{a}/{b}"], False
+    for key, paths in var.items():
+        if key.startswith(a + "/"):
+            return paths, False
+    return None, False
 
 
 def _circle_pts(c: P2, r: float, n: int = 24) -> List[P2]:
@@ -100,12 +147,22 @@ def _circle_pts(c: P2, r: float, n: int = 24) -> List[P2]:
 
 
 def render_symbol(sym_id: str, origin: P2, a_dir: P2, b_dir: P2, size: float,
-                  ref: str = "", layer: str = "") -> List[object]:
-    """기호를 용지 좌표 요소 목록으로 만든다. size = 기호 반폭(mm)."""
+                  ref: str = "", layer: str = "", axes=None) -> List[object]:
+    """기호를 용지 좌표 요소 목록으로 만든다. size = 기호 반폭(mm, 게이트 밸브 반길이 기준).
+
+    axes = projection.frame_axes(...) — 아이소메트릭이고 배관이 좌표축 방향일 때만 넘긴다.
+    """
+    layer = layer or symbol_layer(sym_id)
+    imp = imported_symbols().get(sym_id)
+    if imp:
+        paths, mirror = _pick_variant(imp, axes) if axes else (None, False)
+        if paths is not None:
+            return _render_paths(paths, origin, size, ref, layer, screen=True,
+                                 mirror_dir=a_dir if mirror else None)
+        return _render_paths(imp["local"], origin, size, ref, layer, a_dir=a_dir, b_dir=b_dir)
     shapes = SYMBOLS.get(sym_id)
     if not shapes:
         return []
-    layer = layer or SYMBOL_LAYER.get(sym_id, "FITTING")
 
     def tp(p: Sequence[float]) -> P2:
         return (origin[0] + size * (p[0] * a_dir[0] + p[1] * b_dir[0]),
@@ -129,6 +186,26 @@ def render_symbol(sym_id: str, origin: P2, a_dir: P2, b_dir: P2, size: float,
         elif kind == "T":
             out.append(Text(tp(sh[1]), sh[2], height=size * 0.6, layer=layer,
                             anchor="middle", valign="middle", ref=ref))
+    return out
+
+
+def _render_paths(paths, origin: P2, size: float, ref: str, layer: str, screen: bool = False,
+                  a_dir: P2 = (1.0, 0.0), b_dir: P2 = (0.0, 1.0),
+                  mirror_dir: Optional[P2] = None) -> List[object]:
+    """추출 데이터 경로 → 요소. screen=True 면 좌표가 이미 화면 방향(기호표 변형)."""
+    out: List[object] = []
+    for part in paths:
+        pts = []
+        for x, y in part["pts"]:
+            if not screen:
+                x, y = x * a_dir[0] + y * b_dir[0], x * a_dir[1] + y * b_dir[1]
+            elif mirror_dir is not None:          # 배관 축 방향으로 반사 (화살촉 방향 뒤집기)
+                d = x * mirror_dir[0] + y * mirror_dir[1]
+                x, y = x - 2 * d * mirror_dir[0], y - 2 * d * mirror_dir[1]
+            pts.append((origin[0] + size * x, origin[1] + size * y))
+        if len(pts) >= 2:
+            out.append(Polyline(pts, layer=layer, closed=part["closed"], fill=part["fill"],
+                                width=0.3, ref=ref))
     return out
 
 

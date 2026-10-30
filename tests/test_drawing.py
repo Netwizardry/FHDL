@@ -73,7 +73,17 @@ def test_iso_sheet_content(demo):
     assert "PI" in texts and "FE" in texts
     # 엘보·티 용접점
     assert sum(1 for i in sh.by_layer("FITTING") if isinstance(i, Circle) and i.fill) >= 14
-    # 표제란·BOM·절단표
+    # 회사 양식(도면 양식 DXF 추출): BOM 행 + 절단 길이 행 + 표제란 칸
+    assert {"BILL OF MATERIAL", "LINE NO.", "COMMODITY", "JOB NO.", "SHT.NO."} <= set(texts)
+    assert any(t.startswith("PIPE CUT LENGTH (mm)") for t in texts)
+    assert "main_pipe#2  3000 / 2905" in texts                 # 3000 − 2×47.6 (32A 롱 엘보)
+    assert {"WATER", "demo", "1/1", "FHDL 자동 생성"} <= set(texts)
+    assert "DS-생-017" not in texts and "J.con" not in texts     # 양식 샘플 값은 제외
+
+
+def test_simple_form_option(demo):
+    sh = build_drawing(demo, "iso", "demo", form="simple")
+    texts = _texts(sh)
     assert "BILL OF MATERIAL" in texts and "PIPE CUT LENGTH (mm)" in texts
     assert "ISOMETRIC (ISO 6412-2)" in texts and "NTS" in texts
 

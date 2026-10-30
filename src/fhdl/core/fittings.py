@@ -22,6 +22,7 @@ FITTINGS: Dict[str, Tuple[float, str]] = {
     "tee_branch":      (1.80, "분기티(분기통과)"),
     "tee_reducing":    (1.20, "이경티"),
     "reducer":         (0.50, "리듀서/확대관"),
+    "reducer_ecc":     (0.50, "편심 리듀서"),
     "union":           (0.08, "유니온"),
     "coupling":        (0.08, "소켓/커플링"),
     "cap_plug":        (0.00, "캡/플러그(폐단)"),
@@ -30,6 +31,8 @@ FITTINGS: Dict[str, Tuple[float, str]] = {
     "valve_globe":     (10.0, "글로브 밸브"),
     "valve_ball":      (0.05, "볼 밸브"),
     "valve_butterfly": (0.60, "버터플라이 밸브"),
+    "valve_plug":      (0.34, "플러그 밸브(직통, 18·fT)"),
+    "valve_diaphragm": (2.30, "다이어프램 밸브(위어형)"),
     "valve_needle":    (5.00, "니들 밸브"),
     "valve_check":     (2.50, "체크 밸브"),
     "valve_foot":      (1.50, "풋 밸브"),
@@ -60,10 +63,11 @@ FITTINGS: Dict[str, Tuple[float, str]] = {
 # ISO 6412-2 아이소메트릭 배관 기호(밸브=나비넥타이형, 계기=원형 태그).
 # 없는 키는 도면에 기호를 그리지 않는다(엘보·티는 경로 꺾임/분기에서 자동 표시).
 FITTING_SYMBOLS: Dict[str, str] = {
-    "reducer": "reducer", "union": "union", "coupling": "coupling",
+    "reducer": "reducer", "reducer_ecc": "reducer_ecc", "union": "union", "coupling": "coupling",
     "cap_plug": "cap",
     "valve_gate": "valve_gate", "valve_globe": "valve_globe",
     "valve_ball": "valve_ball", "valve_butterfly": "valve_butterfly",
+    "valve_plug": "valve_plug", "valve_diaphragm": "valve_diaphragm",
     "valve_needle": "valve_needle", "valve_check": "valve_check",
     "valve_foot": "valve_check", "valve_relief": "valve_relief",
     "valve_prv": "valve_prv", "valve_solenoid": "valve_solenoid",
@@ -83,6 +87,7 @@ _ALIASES: Dict[str, str] = {
     "TEE_BRANCH": "tee_branch",
     "GATE_VALVE": "valve_gate", "GLOBE_VALVE": "valve_globe",
     "BALL_VALVE": "valve_ball", "CHECK_VALVE": "valve_check",
+    "PLUG_VALVE": "valve_plug", "DIAPHRAGM_VALVE": "valve_diaphragm", "ECC_REDUCER": "reducer_ecc",
     "FOOT_VALVE": "valve_foot",
     "REDUCER": "reducer", "ENTRANCE": "entrance", "EXIT": "exit",
 }

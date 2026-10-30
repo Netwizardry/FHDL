@@ -17,12 +17,14 @@ VIEW_NAMES = {"iso": "아이소메트릭", "plan": "평면도", "elevation": "�
 FORMATS = ("svg", "pdf", "dxf", "png", "step")
 
 
-def build_drawing(result, view: str = "iso", project: str = "", sheet_no: str = "1/1") -> Sheet:
+def build_drawing(result, view: str = "iso", project: str = "", sheet_no: str = "1/1",
+                  form: str = "company") -> Sheet:
+    """form: 배관 도면 양식 — "company"(도면 양식 DXF 추출, 기본) | "simple". 계통도는 간이 양식."""
     if view == "pid":
         from .pid import build_pid_sheet
         return build_pid_sheet(result, project, sheet_no)
     from .piping import build_piping_sheet
-    return build_piping_sheet(result, view, project, sheet_no)
+    return build_piping_sheet(result, view, project, sheet_no, form)
 
 
 def build_set(result, views: Iterable[str] = VIEWS, project: str = "") -> List[Sheet]:

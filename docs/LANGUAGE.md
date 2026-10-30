@@ -84,7 +84,7 @@ pipe p { ...; fittings = [elbow_90*2, valve_gate, valve_check]; }
 ```c
 pipe p { ...; fittings = [valve_check@3m, valve_gate@6m, flow_meter@50%]; }
 ```
-국부손실 `K = k_factor + Σ(부속 K)` 로 계산. 대표 K: `elbow_90`=0.9, `elbow_45`=0.4, `tee_branch`=1.8, `valve_gate`=0.2, `valve_globe`=10, `valve_check`=2.5, `reducer`=0.5 … (전체 34종은 `core/fittings.py`). 대문자 별칭(ELBOW90, GATE_VALVE 등) 호환.
+국부손실 `K = k_factor + Σ(부속 K)` 로 계산. 대표 K: `elbow_90`=0.9, `elbow_45`=0.4, `tee_branch`=1.8, `valve_gate`=0.2, `valve_globe`=10, `valve_check`=2.5, `reducer`=0.5 … (전체 37종은 `core/fittings.py`, 도면 기호가 있는 부속은 [DRAWING](DRAWING.md)). 대문자 별칭(ELBOW90, GATE_VALVE 등) 호환.
 
 또한 좌표가 있으면 **경로 꺾임각으로 엘보 K(auto_k)** 가 자동 가산된다(노드에서의 꺾임 + `via` 경유점 꺾임).
 

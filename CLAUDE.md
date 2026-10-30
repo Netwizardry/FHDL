@@ -19,7 +19,7 @@ FHDL/
 │   ├── db/               # project_db (프로젝트별), library_db (전역 부품 CRUD)
 │   ├── drawing/          # 도면 생성 (ISO·평면·정면·P&ID → SVG·PDF·DXF·STEP)
 │   └── gui/              # main_window + panels/ (5패널) + log_console + library_dialog
-├── tests/                # pytest (152개)
+├── tests/                # pytest (161개)
 ├── resources/styles/     # dark_theme.qss
 ├── data/library.db       # 전역 부품 라이브러리
 ├── projects/             # 프로젝트별 작업공간
@@ -109,6 +109,7 @@ FHDL/
 - [x] 성능 최적화(1000노드<1s)·저널 복구·정확도 벤치마크·패키징·아이콘
 - [x] 기하 검증(SEM008~011)·배관 경유점 via·부속 위치(@)·숨은 엘보 K
 - [x] 배관 도면 생성(ISO 6412-2 아이소메트릭·평면·정면·P&ID) + ISO 기호·BOM·절단표 + PDF·DXF·SVG·STEP(SolidCraft, 선택) — `docs/DRAWING.md`
+- [x] 사용자 기호표·도면 양식 DXF(`archive/dxf/`) → 도면 기호·양식 데이터 이식(`drawing/data/`, 재현성 테스트)
 - [ ] **(차후 대형) 복합 루프망 Hardy-Cross** — `docs/ROADMAP.md` §1
 - [ ] **(차후 대형) 수충격 MOC 정밀 해석** — `docs/ROADMAP.md` §2
 - [ ] (로드맵) CAD/BIM 양방향 연동(도면→DSL 가져오기), 다국어(i18n)

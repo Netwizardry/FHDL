@@ -38,7 +38,10 @@
    ├─ piping.py        아이소메트릭·평면도·정면도 + BOM·절단표
    ├─ pid.py           계통도(P&ID) + 장비·라인 목록
    ├─ frame.py         도곽·표제란·표·방위 표시
-   └─ export_svg / export_dxf(ezdxf) / render_qt(PDF·PNG) / export_step(SolidCraft, 선택)
+   ├─ export_svg / export_dxf(ezdxf) / render_qt(PDF·PNG) / export_step(SolidCraft, 선택)
+   ├─ dxf_symbols.py   기호표 DXF → data/iso_symbols.json (기호 15종·방향 변형)
+   ├─ dxf_form.py      도면 양식 DXF → data/iso_form.json (A3 배관 ISO 양식·채움 칸)
+   └─ data/            이식된 기호·양식 데이터 (원본 archive/dxf, 테스트로 재현성 고정)
         │
         ▼
    gui (PySide6)

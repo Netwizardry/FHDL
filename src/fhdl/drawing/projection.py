@@ -44,7 +44,30 @@ def project_dir(view: str, d: Sequence[float]) -> P2:
     return (a[0] - b[0], a[1] - b[1])
 
 
+_AXIS_NAMES = {(1.0, 0.0, 0.0): "E", (0.0, 1.0, 0.0): "N", (0.0, 0.0, 1.0): "U"}
+
+
+def frame_axes(view: str, u: Sequence[float]):
+    """좌표축과 나란한 배관 방향 u → (배관 축 이름, 부호 "+"/"-", 기호 평면 축 이름).
+
+    기호표 방향 변형(drawing/data/iso_symbols.json) 선택용. 사선 배관이면 None.
+    평면 축은 symbol_frame 이 고르는 축과 같다.
+    """
+    k = max(range(3), key=lambda i: abs(u[i]))
+    if abs(u[k]) < 0.999:
+        return None
+    a_name = "ENU"[k]
+    sign = "+" if u[k] > 0 else "-"
+    _, _, w = _frame(view, u)
+    return (a_name, sign, _AXIS_NAMES[w]) if w is not None else None
+
+
 def symbol_frame(view: str, u: Sequence[float]) -> Tuple[P2, P2]:
+    a, b, _ = _frame(view, u)
+    return a, b
+
+
+def _frame(view: str, u: Sequence[float]):
     """배관 방향 u(단위벡터)에 대한 기호 로컬 좌표축 (a축, b축)의 도면 방향.
 
     a = u 의 투영(정규화), b = u 에 수직인 월드 방향 중 도면에서 가장 길게 보이고
@@ -54,9 +77,9 @@ def symbol_frame(view: str, u: Sequence[float]) -> Tuple[P2, P2]:
     au = project_dir(view, u)
     la = math.hypot(*au)
     if la < 1e-6:
-        return (1.0, 0.0), (0.0, 1.0)
+        return (1.0, 0.0), (0.0, 1.0), None
     a = (au[0] / la, au[1] / la)
-    best, best_score = None, -1.0
+    best, best_score, best_w = None, -1.0, None
     for w in WORLD_AXES:
         # u 에 수직 성분만 남김
         dot = sum(w[i] * u[i] for i in range(3))
@@ -71,13 +94,13 @@ def symbol_frame(view: str, u: Sequence[float]) -> Tuple[P2, P2]:
         cross = abs(a[0] * pb[1] - a[1] * pb[0]) / lb   # a 와의 사잇각 sin
         score = lb * cross
         if score > best_score + 1e-6:
-            best, best_score = (pb[0] / lb, pb[1] / lb), score
+            best, best_score, best_w = (pb[0] / lb, pb[1] / lb), score, w
     if best is None or best_score < 0.2:
-        best = (-a[1], a[0])
+        best, best_w = (-a[1], a[0]), None
     # b 가 a 의 왼쪽(반시계)이 되도록 통일 — 주석 배치 방향이 일관된다
     if a[0] * best[1] - a[1] * best[0] < 0:
         best = (-best[0], -best[1])
-    return a, best
+    return a, best, best_w
 
 
 class Fit:

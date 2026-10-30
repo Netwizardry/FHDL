@@ -23,7 +23,7 @@ from ..core.pipe_sizes import nominal_size
 from ..core.units import display_units
 from . import frame
 from .layout import node_positions
-from .projection import Fit, PROJECTIONS, project_dir, symbol_frame
+from .projection import Fit, PROJECTIONS, frame_axes, project_dir, symbol_frame
 from .sheet import Circle, Line, Polyline, Sheet, Text
 from .symbols import pump_symbol, render_symbol, tank_symbol, weld_dot
 
@@ -105,21 +105,28 @@ class _Ctx:
         return -1.0 if pr and pr.flow < 0 else 1.0
 
 
-def build_piping_sheet(result, view: str = "iso", project: str = "", sheet_no: str = "1/1") -> Sheet:
+def build_piping_sheet(result, view: str = "iso", project: str = "", sheet_no: str = "1/1",
+                       form: str = "company") -> Sheet:
+    """form = "company"(도면 양식 DXF 추출 양식, 기본) | "simple"(간이 도곽)."""
     if view not in PROJECTIONS:
         raise ValueError(f"알 수 없는 도면 종류: {view}")
     sheet = Sheet(title=f"PIPING {VIEW_LABELS[view].split(' ')[0]}", view=view)
+    form_data = frame.company_form() if form == "company" else None
     if result is None or result.entity_map is None:
-        frame.draw_border(sheet)
-        frame.draw_title_block(sheet, sheet.title, project or "-", VIEW_LABELS[view], sheet_no)
+        if form_data:
+            frame.draw_company_form(sheet, form_data, {"sheet": sheet_no, "job_no": project}, [], [])
+        else:
+            frame.draw_border(sheet)
+            frame.draw_title_block(sheet, sheet.title, project or "-", VIEW_LABELS[view], sheet_no)
         return sheet
     c = _Ctx(result, view)
-    area = frame.drawing_area(sheet)
+    area = tuple(form_data["drawing_area"]) if form_data else frame.drawing_area(sheet)
     fit = Fit(c.all2d, area, margin=18.0, right_extra=32.0)
     to_paper = lambda p3: fit(c.proj(p3))  # noqa: E731
     sheet.fit = (fit.scale, fit.ox, fit.oy)
 
-    frame.draw_border(sheet)
+    if not form_data:
+        frame.draw_border(sheet)
     unplaced_fittings = False
     turn_nodes = Counter()   # 노드별 연결 배관 수 (분기·꺾임 용접점)
     for p in c.em.pipes.values():
@@ -174,6 +181,7 @@ def build_piping_sheet(result, view: str = "iso", project: str = "", sheet_no: s
         if free:
             unplaced_fittings = True
         k_free = 0
+        sym_spots: List[Tuple[float, float]] = []   # 부속 기호 위치 (흐름 화살표가 피함)
         for fp in placements:
             if fp.at_m is not None:
                 d_route = fp.at_m * route_len / decl if decl > 0 else fp.at_m
@@ -184,23 +192,34 @@ def build_piping_sheet(result, view: str = "iso", project: str = "", sheet_no: s
                 d_route = route_len * k_free / (len(free) + 1)
             p3, u = point_at(pts, d_route)
             a, b = symbol_frame(view, u)
+            axes = frame_axes(view, u) if view == "iso" else None
             base = to_paper(p3)
+            sym_spots.append(base)
             for k in range(fp.count):
                 off = (k - (fp.count - 1) / 2) * SYM * 2.4
                 sheet.extend(render_symbol(fitting_symbol(fp.canon), _add(base, a, off), a, b, SYM,
-                                           ref=pid))
+                                           ref=pid, axes=axes))
 
-        # 흐름 화살표: 투영상 가장 긴 구간의 35% 지점
+        # 흐름 화살표: 투영상 가장 긴 구간에서 부속 기호와 가장 먼 지점 (기본 35%)
         segs = [(i, math.dist(to_paper(pts[i]), to_paper(pts[i + 1]))) for i in range(len(pts) - 1)]
         i_long, L_long = max(segs, key=lambda s: s[1])
         if L_long > 6.0:
             sgn = c.flow_sign(pid)
-            t = 0.35 if sgn > 0 else 0.65
             p_a, p_b = to_paper(pts[i_long]), to_paper(pts[i_long + 1])
-            tip = (p_a[0] + (p_b[0] - p_a[0]) * t, p_a[1] + (p_b[1] - p_a[1]) * t)
-            u = unit(sub(pts[i_long + 1], pts[i_long]))
-            a, b = symbol_frame(view, tuple(x * sgn for x in u))
-            sheet.extend(render_symbol("flow_arrow", tip, a, b, 2.2, ref=pid))
+
+            def _at(t):
+                return (p_a[0] + (p_b[0] - p_a[0]) * t, p_a[1] + (p_b[1] - p_a[1]) * t)
+
+            cands = [0.35, 0.5, 0.65, 0.25, 0.75, 0.15, 0.85, 0.42, 0.58]
+            if sgn < 0:
+                cands = [1 - t for t in cands]
+            clear = lambda t: min((math.dist(_at(t), q) for q in sym_spots), default=99.0)  # noqa: E731
+            t = next((t for t in cands if clear(t) > SYM * 2.2), max(cands, key=clear))
+            tip = _at(t)
+            u = tuple(x * sgn for x in unit(sub(pts[i_long + 1], pts[i_long])))
+            a, b = symbol_frame(view, u)
+            sheet.extend(render_symbol("flow_arrow", tip, a, b, 2.2, ref=pid,
+                                       axes=frame_axes(view, u) if view == "iso" else None))
 
         # 구간 치수
         for i in range(len(pts) - 1):
@@ -267,26 +286,20 @@ def build_piping_sheet(result, view: str = "iso", project: str = "", sheet_no: s
 
     # --- 방위 · 표 · 표제란 ------------------------------------------------
     x0, y0, x1, y1 = area
+    na = tuple(form_data["north_arrow"]) if form_data else (x1 - 16.0, y1 - 14.0)
     if view in ("iso", "plan"):
-        frame.draw_north_arrow(sheet, (x1 - 16.0, y1 - 14.0), project_dir(view, (0.0, 1.0, 0.0)))
+        frame.draw_north_arrow(sheet, na, project_dir(view, (0.0, 1.0, 0.0)),
+                               size=5.5 if form_data else 7.0)
     else:
         sheet.add(Text((x1 - 4.0, y1 - 6.0), "VIEW: 남측에서 북쪽을 봄", height=2.4,
                        layer="NORTH", anchor="end"))
 
-    rx = sheet.width - frame.MARGIN - frame.RIGHT_W + 2.0
-    rw = frame.RIGHT_W - 4.0
-    y = sheet.height - frame.MARGIN - 2.0
-    y = frame.draw_table(sheet, rx, y, rw, "BILL OF MATERIAL",
-                         ["NO", "DESCRIPTION", "SIZE", "Q'TY"], [8, 52, 22, 18], bom_rows(c), 16)
     cut_rows = []
     for pid, pts in c.routes.items():
         if len(pts) < 3:
             continue
         for sp in spool_cut_lengths(pts, c.diameter(pid)):
             cut_rows.append([pid, str(sp.index + 1), f"{sp.length_m * 1000:.0f}", f"{sp.cut_m * 1000:.0f}"])
-    if cut_rows:
-        y = frame.draw_table(sheet, rx, y, rw, "PIPE CUT LENGTH (mm)",
-                             ["LINE", "SEG", "C-C", "CUT"], [40, 12, 24, 24], cut_rows, 14)
     notes = [
         "좌표계: x=동(E), y=북(N), z=상. 치수 단위 " + ("mm" if lu == "m" else "ft") + ", EL 은 datum 기준(m).",
         "축척 없음(NTS). 도면은 FHDL DSL 에서 자동 생성된다.",
@@ -297,10 +310,53 @@ def build_piping_sheet(result, view: str = "iso", project: str = "", sheet_no: s
         notes.append("위치(@)를 지정하지 않은 부속은 배관을 따라 균등 배치(개략 위치).")
     if c.auto_nodes:
         notes.append("좌표 미지정 노드 자동 배치(개략): " + ", ".join(c.auto_nodes))
-    frame.draw_notes(sheet, rx, y, rw, notes)
     sheet.notes = notes
+    bom = bom_rows(c)
+
+    if form_data:
+        sheet.add(Text((x0 + 4.0, y1 - 6.0), f"{sheet.title} — {VIEW_LABELS[view]}", height=3.0,
+                       layer="TEXT"))
+        # 양식 칸이 좁다: SIZE = 호칭 A 만, Q'TY 는 공백 없이
+        def _qty(q: str) -> str:
+            q = q.replace(" ", "")
+            return f"{float(q[:-1]):.0f}m" if q.endswith("m") and len(q) > 5 else q
+
+        rows = [[no, size.split("(")[0], _qty(qty), desc[5:] if desc.startswith("PIPE ") else "",
+                 desc] for no, desc, size, qty in bom]
+        if cut_rows:
+            rows.append(["", "", "", "", "PIPE CUT LENGTH (mm)  LINE#SEG  C-C / CUT"])
+            rows += [["", "", "", "", f"{pid}#{seg}  {cc} / {cut}"] for pid, seg, cc, cut in cut_rows]
+        frame.draw_company_form(sheet, form_data, _form_fields(c, project, view, sheet_no), rows, notes)
+        return sheet
+
+    rx = sheet.width - frame.MARGIN - frame.RIGHT_W + 2.0
+    rw = frame.RIGHT_W - 4.0
+    y = sheet.height - frame.MARGIN - 2.0
+    y = frame.draw_table(sheet, rx, y, rw, "BILL OF MATERIAL",
+                         ["NO", "DESCRIPTION", "SIZE", "Q'TY"], [8, 52, 22, 18], bom, 16)
+    if cut_rows:
+        y = frame.draw_table(sheet, rx, y, rw, "PIPE CUT LENGTH (mm)",
+                             ["LINE", "SEG", "C-C", "CUT"], [40, 12, 24, 24], cut_rows, 14)
+    frame.draw_notes(sheet, rx, y, rw, notes)
     frame.draw_title_block(sheet, sheet.title, project or "FHDL", VIEW_LABELS[view], sheet_no)
     return sheet
+
+
+def _form_fields(c: "_Ctx", project: str, view: str, sheet_no: str) -> Dict[str, str]:
+    """회사 양식 표제란 채움 값. 운전 압력 = 노드 최대 게이지압(kg/cm²), 온도 = 유체 온도."""
+    import datetime as _dt
+    p_max = max((n.p_gauge for n in c.r.node_results), default=0.0)
+    lines = list(c.em.pipes)
+    return {
+        "line_no": ", ".join(lines) if len(lines) <= 3 else f"{lines[0]} 외 {len(lines) - 1}",
+        "commodity": str(c.em.fluid.fluid_type).upper(),
+        "job_no": project or "FHDL", "sheet": sheet_no, "rev": "0",
+        "rev_no": "0", "rev_year": _dt.date.today().strftime("%Y"),
+        "rev_md": _dt.date.today().strftime("%m.%d"),
+        "rev_desc": "FHDL 자동 생성", "drawn": "FHDL",
+        "area": project or "-", "unit": {"iso": "ISO", "plan": "PLAN", "elevation": "ELEV"}[view],
+        "oper_press": f"{p_max / 98066.5:.2f}", "oper_temp": f"{c.em.fluid.temp:g}",
+    }
 
 
 def _place_label(sheet: Sheet, placed: list, o, lines: List[str], ref: str) -> None:
