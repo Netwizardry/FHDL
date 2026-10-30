@@ -22,6 +22,7 @@ HELP_TEXT = [
     "  why <id>                               이 설비 판정의 근거·질문",
     "  impact                                 직전 해석 대비 판정 변화 (설계 변경 영향)",
     "  history [id]                           저장 시점별 변경 이력 (설비 지정 시 그 설비만)",
+    "  import <파일.dxf>                      DXF 전기 설계도 가져오기 (부하 일람표·CABLE SCHEDULE·단선결선도)",
     "  ls                                     설비·배선 목록",
     "  dwg [export <파일.pdf|svg|dxf|png>]     계통 구성도 보기/내보내기",
     "  report <파일.pdf|csv|json>             검산 보고서 (요구규격·검산·시나리오·근거·질문서)",
@@ -51,6 +52,10 @@ def execute_command(source: str, command: str, result=None) -> CommandResult:
         return _why(result, pos[0] if pos else "")
     if verb == "impact":
         return CommandResult(action="impact", messages=[], rerun=False)
+    if verb == "import":
+        if not pos or not pos[0].lower().endswith(".dxf"):
+            return err("사용법: import <파일.dxf>")
+        return CommandResult(action="import", args={"path": pos[0]}, messages=[f"DXF 가져오기 ← {pos[0]}"], rerun=False)
     if verb == "history":
         return CommandResult(action="history", args={"id": pos[0] if pos else ""}, messages=[], rerun=False)
     if verb == "add":

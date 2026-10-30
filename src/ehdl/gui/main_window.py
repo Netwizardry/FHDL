@@ -114,6 +114,7 @@ class EHDLMainWindow(QMainWindow):
                                 ("데모 열기", "", lambda: self.open_file(str(DEMO))),
                                 ("저장(&S)", "Ctrl+S", self._save), ("다른 이름으로 저장…", "Ctrl+Shift+S", self._save_as),
                                 (None, None, None),
+                                ("DXF 가져오기(&I)…", "Ctrl+I", self._import_dialog),
                                 ("계통 구성도 내보내기…", "Ctrl+Shift+E", self.graph.export_dialog),
                                 ("검산 보고서…", "Ctrl+Shift+R", self._report_dialog),
                                 (None, None, None),
@@ -260,6 +261,8 @@ class EHDLMainWindow(QMainWindow):
                 self.graph.export(self._abs(res.args["path"]))
         elif res.action == "report":
             self.export_report(self._abs(res.args["path"]))
+        elif res.action == "import":
+            self.import_dxf(self._abs(res.args["path"]))
         elif res.action == "history":
             from ..history import describe, for_target
             tid = res.args.get("id")
@@ -343,6 +346,51 @@ class EHDLMainWindow(QMainWindow):
         if p:
             self.path = p if p.endswith(".ehd") else p + ".ehd"
             self._save()
+
+    def _import_dialog(self):
+        p, _ = QFileDialog.getOpenFileName(self, "DXF 가져오기 (부하 일람표·CABLE SCHEDULE·단선결선도)",
+                                           str(Path.home()), "DXF (*.dxf)")
+        if p:
+            self.import_dxf(p)
+
+    def import_dxf(self, path: str):
+        """DXF 전기 설계도 → 새 EHDL 계통 (저장 전). 가져오기 보고서는 로그로."""
+        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import QApplication
+        if self._dirty and QMessageBox.question(self, "저장 안 됨", "저장하지 않은 변경이 있습니다. 버리고 가져올까요?") \
+                != QMessageBox.StandardButton.Yes:
+            return None
+        from ..dxf_import import import_dxf
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            res = import_dxf(path)
+        except Exception as e:
+            self.console.log(f"DXF 가져오기 실패: {e}", "ERROR")
+            return None
+        finally:
+            QApplication.restoreOverrideCursor()
+        self.path = None
+        self.result = None
+        self.editor.set_source(res.source, reset_undo=True)
+        self._dirty = True
+        self._update_title()
+        self.graph.collapsed = set()
+        self._run()
+        if self.result is not None and self.result.model is not None:   # 회로가 많은 반은 접어서 보여 준다
+            self.graph.collapsed = {k for k, v in self.result.children.items()
+                                    if self.result.model.nodes[k].type == "panel" and len(v) > 6}
+            self.graph.update_from_result(self.result, self._project())
+        self._mark_saved()
+        self._dirty = True
+        self.console.log("DXF 가져오기 — " + res.summary() + f" ({Path(path).name})", "OK")
+        for w_ in res.warnings:
+            self.console.log("  도면 불일치: " + w_, "WARNING")
+        for n_ in res.notes:
+            self.console.log("  참고: " + n_, "INFO")
+        for q_ in res.questions:
+            self.console.log("  확인할 입력: " + q_, "INFO")
+        self.console.log("다른 이름으로 저장(Ctrl+Shift+S) 하면 .ehd 프로젝트가 됩니다.", "INFO")
+        return res
 
     def _report_dialog(self):
         base = os.path.join(os.path.dirname(self.path) if self.path else str(Path.home()), f"{self._project()}_report")

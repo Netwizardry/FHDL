@@ -160,13 +160,24 @@ class NodeResult:
     vdrop_pct: Optional[float] = None     # 전원(또는 변압기 2차)에서 이 노드까지 누적 전압강하 %
     vdrop_estimated: bool = False
     path_length: float = 0.0
+    # 역률 미입력 피상전력(kVA 정격) — 위상을 모르므로 따로 산술합 (|ΣS| ≤ |Σ알려진 S| + Σ|S미입력| → 보수적 상한)
+    S_extra: float = 0.0
+    phase_extra: Tuple[float, float, float] = (0.0, 0.0, 0.0)
+    pf_unknown: List[str] = field(default_factory=list)       # 역률 미입력 부하 ID
 
     @property
     def S(self) -> float:
-        return abs(complex(self.P, self.Q))
+        return abs(complex(self.P, self.Q)) + self.S_extra
+
+    @property
+    def P_max(self) -> float:
+        """유효전력 상한 — 역률 미입력 부하는 P ≤ S 로 본다(보수적)."""
+        return self.P + self.S_extra
 
     @property
     def pf(self) -> Optional[float]:
+        if self.S_extra > 0:
+            return None                  # 역률을 모르는 부분이 있다
         return self.P / self.S if self.S > 0 else None
 
 
@@ -192,6 +203,7 @@ class EResult:
     order: List[str] = field(default_factory=list)                     # 전원 → 말단
     levels: Dict[str, tuple] = field(default_factory=dict)             # (입력 V, 출력 V, 상수)
     load_missing: Dict[str, List[str]] = field(default_factory=dict)   # 부하별 누락 입력
+    load_assumed: Dict[str, List[str]] = field(default_factory=dict)   # 부하별 보수적 가정(역률 미입력 kVA 등)
     sc: Dict[str, object] = field(default_factory=dict)                # 노드 → 단락전류 결과 (shortcircuit.SCResult)
 
     def checks_for(self, target: str) -> List[Check]:

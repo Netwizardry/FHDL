@@ -37,6 +37,13 @@ def _worst(res: EResult, getter: Callable[[str], Tuple[Optional[float], Optional
     return best
 
 
+def bound_is_exact(nr: Optional[NodeResult]) -> bool:
+    """역률 미입력 산술합이 정확한 값인가 — 역률을 모르는 부하가 하나뿐이고 나머지가 없으면 크기는 정확."""
+    if nr is None or nr.S_extra <= 0:
+        return True
+    return len(set(nr.pf_unknown)) == 1 and abs(complex(nr.P, nr.Q)) < 1e-9
+
+
 def judge(res: EResult, rules: RuleSet, kb=None) -> List[Check]:
     m = res.model
     review_below = float(m.settings.get("review_below") or DEFAULT_REVIEW_BELOW)
@@ -56,6 +63,8 @@ def judge(res: EResult, rules: RuleSet, kb=None) -> List[Check]:
                       contributors=list(nr.contributors))
         if nr.balanced_estimate:
             ev.assumptions.append("단상 부하 접속 상(phase) 미지정 → 평형 가정 전류")
+        if nr.S_extra > 0:
+            ev.assumptions.append(f"역률 미입력 부하 {len(set(nr.pf_unknown))}개 — 피상전력 산술합(보수적 상한)")
         missing = [f"{i}: {', '.join(res.load_missing.get(i, []))}" for i in dict.fromkeys(nr.incomplete)]
         c = Check(f"{target}:{kind}", target, kind, title, "N/A", installed=installed, unit=unit,
                   actual=actual, evidence=ev, estimated=bool(ev.assumptions))
@@ -68,7 +77,9 @@ def judge(res: EResult, rules: RuleSet, kb=None) -> List[Check]:
         if installed is None:
             c.status = "N/A" if not missing else "UNKNOWN"
         elif actual is not None and actual > installed * (1 + 1e-9):
-            c.status = "FAIL"
+            c.status = "FAIL" if bound_is_exact(nr) else "REVIEW"
+            if c.status == "REVIEW":
+                ev.assumptions.append("보수적 상한(산술합)이 정격을 넘음 — 역률을 입력하면 확정 판정")
         elif missing:
             c.status = "UNKNOWN"
         elif actual is None:
@@ -94,10 +105,14 @@ def judge(res: EResult, rules: RuleSet, kb=None) -> List[Check]:
         if n.type == "load" and res.load_missing.get(nid):
             add(Check(f"{nid}:load_input", nid, "load_input", "부하 입력", "UNKNOWN",
                       missing=list(res.load_missing[nid]), evidence=Evidence(inputs=[nid])))
+        elif n.type == "load" and res.load_assumed.get(nid):
+            add(Check(f"{nid}:load_input", nid, "load_input", "부하 입력", "REVIEW", estimated=True,
+                      evidence=Evidence(inputs=[nid], assumptions=list(res.load_assumed[nid]))))
         if n.type == "source":
             if n.installed.get("limit_kw") is not None:
                 capacity(nid, "source_limit", "유효전력(사용 가능 한도)", n.installed["limit_kw"], "W",
-                         lambda nr: nr.P, "P = Σ 운전 부하 유효전력 (상향 집계)", n.justification)
+                         lambda nr: nr.P_max, "P = Σ 운전 부하 유효전력 (상향 집계, 역률 미입력 부하는 P ≤ S)",
+                         n.justification)
             if n.installed.get("limit_kva") is not None:
                 capacity(nid, "source_limit", "피상전력(사용 가능 한도)", n.installed["limit_kva"], "VA",
                          lambda nr: nr.S, "S = |ΣP + jΣQ|", n.justification)
@@ -166,8 +181,15 @@ def _cable(res: EResult, rules: RuleSet, eid: str, add, kb=None):
         c.utilization = actual / iz
         if nr.balanced_estimate:
             ev.assumptions.append("단상 부하 접속 상 미지정 → 평형 가정 전류")
+        if nr.S_extra > 0:
+            ev.assumptions.append("역률 미입력 부하 포함 — 피상전력 산술합(보수적 상한)")
         c.estimated = bool(ev.assumptions)
-        c.status = "FAIL" if actual > iz else ("REVIEW" if c.estimated else "PASS")
+        if actual > iz and not bound_is_exact(nr):
+            ev.assumptions.append("보수적 상한(산술합)이 허용전류를 넘음 — 역률을 입력하면 확정 판정")
+            c.estimated = True
+            c.status = "REVIEW"
+        else:
+            c.status = "FAIL" if actual > iz else ("REVIEW" if c.estimated else "PASS")
     add(c)
     # 보호 협조: 이 배선을 보호하는 상위 차단기 In ≤ Iz
     up = m.nodes.get(e.from_id)

@@ -66,7 +66,7 @@ def tables(res: EResult) -> Dict[str, dict]:
             if r is None:
                 cells.append("-")
                 continue
-            v = r.current if n.installed.get("rated_current") else (r.S if n.installed.get("rated") else r.P)
+            v = r.current if n.installed.get("rated_current") else (r.S if n.installed.get("rated") else r.P_max)
             cells.append(f"{v / rated * 100:.0f}%" if v is not None else "?")
         unit = "A" if n.installed.get("rated_current") else ("VA" if n.installed.get("rated") else "W")
         D["rows"].append([nid, fmt(rated, unit, 0)] + cells)

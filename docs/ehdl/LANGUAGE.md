@@ -54,7 +54,7 @@
 | `kind` | `motor` `lighting` `receptacle` `heater` `general` — 전압강하 허용치(조명/기타) 구분 |
 | `rating` | 정격 `kW` 또는 `kVA` |
 | `basis` | `output`(기계적 출력) / `input`(전기 입력). **kW 면 필수**(조명·콘센트·히터는 정의상 input). output 이면 `efficiency` 필수 |
-| `pf` | 역률 (필수 — 가정하지 않음) |
+| `pf` | 역률 — kW 정격이면 필수. kVA 정격이면 없어도 보수적 산술합으로 판정(추정·질문) |
 | `phases` | `1` / `3` (필수) |
 | `phase` | 단상 부하의 접속 상 `L1` `L2` `L3`(상-중성) · `L1L2` `L2L3` `L3L1`(선간). 없으면 상별 전류는 평형 가정 추정, 불평형 판정 UNKNOWN |
 | `state` | 정상 운전 상태 `on`/`off` (미지정 = on) |

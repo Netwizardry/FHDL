@@ -31,6 +31,7 @@
 - 판정 근거에 **KEC 원문 조항·쪽**(지식 DB — `python -m ehdl.kb.build`), 계통 구성도(단선결선도)·검산 보고서(B~F)
 - Phase 2: 단락전류(KS C IEC 60909-0)·차단용량·도체 열적 내량·보호협조·전동기 기동·누전차단기·SPD·허용전류 보정계수
 - Phase 3: 계통접지(TN-S/TN-C/TN-C-S/TT/IT)·고장보호(전원 자동차단, 고장루프 임피던스)·PE·등전위본딩·수전 종합(설비용량·최대수요·계약전력·변압기)·설계 변경 영향
+- **DXF 가져오기**: 국내 전기 설계도(부하 일람표·CABLE SCHEDULE·단선결선도·전동기 SCHEDULE)를 머리글로 읽어 계통 생성 + 도면 교차 점검
 - 기본설계: 전선 규격 후보(허용전류·보호협조·전압강하·열적 내량 동시 만족), 최소 단락전류 순시 동작·차단 범위, 혼합 모드(기존/신규), 기동 방식, 차단기 설정(Ir·Isd·tsd·Ics), 변경 이력
 - 문서: [docs/ehdl/](docs/ehdl/GUI.md)
 
@@ -150,7 +151,7 @@ FHDL/
 ├── resources/styles/       # dark_theme.qss
 ├── data/library.db         # 전역 부품 라이브러리 (자동 생성)
 ├── projects/               # 프로젝트별 작업공간 (main.fhd, state.db, project.fhproj)
-├── tests/                  # pytest (280개)
+├── tests/                  # pytest (291개)
 ├── docs/                   # 코드 기준 문서 (INDEX·LANGUAGE·SOLVER·…)
 └── archive/                # 구 명세·감사·v0.1 보관
 ```
@@ -160,7 +161,7 @@ FHDL/
 ## 테스트
 
 ```bash
-pytest -q     # 280개 (파서·솔버·네트워크·재질·부속·경로·도면·DXF 이식·DB·프로젝트IO·명령콘솔 등)
+pytest -q     # 291개 (파서·솔버·네트워크·재질·부속·경로·도면·DXF 이식·DB·프로젝트IO·명령콘솔 등)
 ```
 
 ---

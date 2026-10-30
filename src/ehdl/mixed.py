@@ -20,7 +20,7 @@ def _value(res: EResult, sid: str, c) -> float:
     if r is None:
         return None
     q = _QTY[c.kind] or ("P" if c.unit == "W" else "S")
-    return r.current if q == "current" else (r.P if q == "P" else r.S)
+    return r.current if q == "current" else (r.P_max if q == "P" else r.S)
 
 
 def is_mixed(res: EResult) -> bool:

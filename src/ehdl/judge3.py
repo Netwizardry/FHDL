@@ -288,13 +288,15 @@ def _supply(res: EResult, rules: RuleSet, add):
         return
     rated = res.scenarios["rated"].nodes[src.id]
     sid = res.design_scenario
-    worst = max((res.scenarios[s] for s in res.scenarios if s != "rated"), key=lambda s: s.nodes[src.id].P)
+    worst = max((res.scenarios[s] for s in res.scenarios if s != "rated"), key=lambda s: s.nodes[src.id].P_max)
     dem = worst.nodes[src.id]
     ev = Evidence(inputs=[src.id], formula="수용률 = 최대수요전력 ÷ 설비용량 (검사·점검 기준 230.4.3)",
                   rule=rules.ref("TX_CAPACITY"), scenario=worst.scenario.id,
-                  values={"설비용량 합계(kVA)": round(rated.S / 1000, 1), "설비용량 합계(kW)": round(rated.P / 1000, 1),
-                          "최대수요전력(kW)": round(dem.P / 1000, 1), "최대수요전력(kVA)": round(dem.S / 1000, 1),
-                          "수용률(계산)": round(dem.P / rated.P, 3) if rated.P else 0.0})
+                  values={"설비용량 합계(kVA)": round(rated.S / 1000, 1), "설비용량 합계(kW)": round(rated.P_max / 1000, 1),
+                          "최대수요전력(kW)": round(dem.P_max / 1000, 1), "최대수요전력(kVA)": round(dem.S / 1000, 1),
+                          "수용률(계산)": round(dem.S / rated.S, 3) if rated.S else 0.0})
+    if dem.S_extra > 0:
+        ev.assumptions.append(f"역률 미입력 부하 {len(set(dem.pf_unknown))}개 — 유효전력은 P ≤ S 상한(보수적)")
     tx = [n for n in m.nodes.values() if n.type == "transformer" and n.installed.get("rated")]
     for t in tx:
         ev.values[f"{t.id} 정격(kVA)"] = t.installed["rated"] / 1000
@@ -308,15 +310,15 @@ def _supply(res: EResult, rules: RuleSet, add):
         if not m.settings.get("diversity"):
             ev.assumptions.append("부등률 미입력 → 1.0")
     c = Check(f"{src.id}:supply_summary", src.id, "supply_summary", "수전 종합 (설비용량·최대수요·계약·변압기)", "PASS",
-              unit="W", actual=dem.P, evidence=ev)
+              unit="W", actual=dem.P_max, evidence=ev)
     contract = m.settings.get("contract_kw")
     if contract is not None:
         cref = rules.ref("CONTRACT_POWER")
         c.installed = contract
-        c.required = Requirement("계약전력", "≥", dem.P, "W", cref.id)
-        c.utilization = dem.P / contract
+        c.required = Requirement("계약전력", "≥", dem.P_max, "W", cref.id)
+        c.utilization = dem.P_max / contract
         ev.values["계약전력(kW)"] = contract / 1000
-        c.status = "FAIL" if dem.P > contract else ("PASS" if cref.verified else "REVIEW")
+        c.status = "FAIL" if dem.P_max > contract else ("PASS" if (cref.verified and not ev.assumptions) else "REVIEW")
     elif panels and tx and ev.values["식 230-6 변압기 용량(kVA)"] * 1000 > tx[0].installed["rated"]:
         c.status = "FAIL"
     add(c)

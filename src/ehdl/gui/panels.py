@@ -209,10 +209,10 @@ class NodeDetailPanel(QTextBrowser):
             if sr and kids:
                 r = sr.nodes[tid]
                 h.append(f"<h3>산정 근거 추적 ({res.design_scenario})</h3><p>{tid}: "
-                         f"{fmt(r.current, 'A')} · {fmt(r.P, 'W')} · {fmt(r.S, 'VA')}</p><ul>")
+                         f"{fmt(r.current, 'A')} · {(('≤ ' if r.S_extra > 0 else '') + fmt(r.P_max, 'W'))} · {fmt(r.S, 'VA')}</p><ul>")
                 for k in kids:
                     kr = sr.nodes[k]
-                    h.append(f"<li>{k}: {fmt(kr.current, 'A')} · {fmt(kr.P, 'W')}"
+                    h.append(f"<li>{k}: {fmt(kr.current, 'A')} · {(('≤ ' if kr.S_extra > 0 else '') + fmt(kr.P_max, 'W'))}"
                              + (" — <span style='color:#E67E22'>입력 부족 포함</span>" if kr.incomplete else "") + "</li>")
                 h.append("</ul>")
         hist = getattr(self, "history", None)
@@ -315,7 +315,7 @@ class EResultsPanel(QWidget):
         nrows = []
         for nid in res.order:
             n, r = m.nodes[nid], sr.nodes[nid]
-            nrows.append([nid, NODE_TYPES[n.type][0], fmt(r.P, "W"), fmt(r.Q, "var"), fmt(r.S, "VA"),
+            nrows.append([nid, NODE_TYPES[n.type][0], (("≤ " if r.S_extra > 0 else "") + fmt(r.P_max, "W")), ("?" if r.S_extra > 0 else fmt(r.Q, "var")), fmt(r.S, "VA"),
                           fmt(r.current, "A") if r.current is not None else "-",
                           f"{r.vdrop_pct:.2f}%" if r.vdrop_pct is not None else "-", res.node_status(nid)])
         self._fill(self.t_nodes, ["ID", "종류", "P", "Q", "S", "최대 상전류", "누적 전압강하", "상태"], nrows, 7)

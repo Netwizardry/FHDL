@@ -134,8 +134,14 @@ def voltage_levels(m: SystemModel, order, upstream, diags) -> Dict[str, Tuple[Op
 # 부하 전력
 # ---------------------------------------------------------------------------
 
+PF_UNKNOWN_NOTE = "역률(pf) 미입력 — 피상전력(kVA) 정격으로 전류·용량은 산술합(보수적), 전압강하는 최악 역률각"
+
+
 def load_power(n) -> Tuple[Optional[complex], List[str], List[str]]:
-    """(복소 피상전력 P+jQ [VA], 누락 입력, 가정) — 누락이 있으면 전력은 None."""
+    """(복소 피상전력 P+jQ [VA], 누락 입력, 가정) — 누락이 있으면 전력은 None.
+
+    kVA 정격인데 역률만 없으면 크기는 알므로 (S∠0, [], [PF_UNKNOWN_NOTE]) — 집계는 S_extra(산술합)로 한다.
+    """
     p = n.params
     missing: List[str] = []
     kind = p.get("kind")
@@ -149,6 +155,8 @@ def load_power(n) -> Tuple[Optional[complex], List[str], List[str]]:
     P = None
     if rating is not None and unit == "apparent":
         if pf is None:
+            if not missing:
+                return complex(rating, 0.0), [], [PF_UNKNOWN_NOTE]
             missing.append("역률(pf)")
         else:
             P = rating * pf
@@ -271,19 +279,27 @@ def loads_under(m: SystemModel, children, nid: str) -> Set[str]:
 # ---------------------------------------------------------------------------
 
 def aggregate(m: SystemModel, sc: Scenario, order, upstream, via, children, levels,
-              load_S, load_missing, rules: RuleSet) -> ScenarioResult:
+              load_S, load_missing, rules: RuleSet, pf_unknown=frozenset()) -> ScenarioResult:
     res = ScenarioResult(sc, on_loads=sorted(sc.on or []))
     for nid in reversed(order):                       # 말단 → 전원
         n = m.nodes[nid]
         v_in, v_out, sys_ph = levels.get(nid, (None, None, 3))
         r = NodeResult(nid, voltage=v_in, phases=sys_ph)
         ph = [0j, 0j, 0j]
+        ex = [0.0, 0.0, 0.0]
         unassigned = False
         contrib: Dict[str, float] = {}
         if n.type == "load" and nid in (sc.on or set()):
             S = load_S.get(nid)
             if S is None:
                 r.incomplete.append(nid)
+            elif nid in pf_unknown:
+                r.S_extra = abs(S)
+                r.pf_unknown.append(nid)
+                share, unassigned = phase_share(n, S, sys_ph)
+                if share:
+                    ex = [abs(s) for s in share]
+                contrib[nid] = abs(S)
             else:
                 r.P, r.Q = S.real, S.imag
                 share, unassigned = phase_share(n, S, sys_ph)
@@ -294,6 +310,10 @@ def aggregate(m: SystemModel, sc: Scenario, order, upstream, via, children, leve
             cr = res.nodes[c]
             r.P += cr.P
             r.Q += cr.Q
+            r.S_extra += cr.S_extra
+            r.pf_unknown += cr.pf_unknown
+            for i in range(3):
+                ex[i] += cr.phase_extra[i]
             r.incomplete += cr.incomplete
             unassigned = unassigned or cr.balanced_estimate
             for i in range(3):
@@ -301,6 +321,7 @@ def aggregate(m: SystemModel, sc: Scenario, order, upstream, via, children, leve
             for lid, s in cr.contributors:
                 contrib[lid] = contrib.get(lid, 0.0) + s
         r.phase_S = tuple(ph)
+        r.phase_extra = tuple(ex)
         r.contributors = sorted(contrib.items(), key=lambda kv: (-kv[1], kv[0]))
         r.balanced_estimate = unassigned
         v = v_in if n.type != "source" else v_out
@@ -312,7 +333,7 @@ def aggregate(m: SystemModel, sc: Scenario, order, upstream, via, children, leve
                 r.current = r.S / (SQRT3 * v)
             else:
                 vln = v / SQRT3
-                pc = tuple(abs(s) / vln for s in ph)
+                pc = tuple((abs(s) + e) / vln for s, e in zip(ph, ex))
                 r.phase_current = pc
                 r.current = max(pc)
         res.nodes[nid] = r
@@ -374,7 +395,13 @@ def cable_vdrop(m: SystemModel, eid: str, r: NodeResult, levels, rules: RuleSet)
         X = rules.values("REACTANCE_DEFAULT")["x_ohm_per_m"]
         notes.append(f"기준 기본값 λ = {X * 1000:g} mΩ/m")
     X = X / par
-    cos = r.pf if r.pf is not None else 1.0
+    if r.S_extra > 0:
+        # 역률 미입력 부하 포함 — R cosφ + X sinφ 가 최대인 역률각 (보수적, 추정)
+        cos = R / math.hypot(R, X) if (R or X) else 1.0
+        est = True
+        notes.append(f"역률 미입력 부하 {len(set(r.pf_unknown))}개 포함 → 최악 역률각 cosφ {cos:.2f}(보수적)")
+    else:
+        cos = r.pf if r.pf is not None else 1.0
     sin = math.sqrt(max(0.0, 1 - cos * cos))
     v_in, _, sys_ph = levels.get(e.to_id, (None, None, 3))
     load = m.nodes.get(e.to_id)
@@ -410,13 +437,19 @@ def solve(m: SystemModel, rules: RuleSet, diags: List[DiagnosticItem]) -> EResul
     levels = voltage_levels(m, order, upstream, diags)
     load_S: Dict[str, Optional[complex]] = {}
     load_missing: Dict[str, List[str]] = {}
+    load_assumed: Dict[str, List[str]] = {}
     for n in m.loads():
-        S, missing, _ = load_power(n)
+        S, missing, assumed = load_power(n)
         load_S[n.id] = S
         load_missing[n.id] = missing
+        if assumed:
+            load_assumed[n.id] = assumed
+    pfu = frozenset(i for i, a in load_assumed.items() if PF_UNKNOWN_NOTE in a)
     for sc in scenarios(m, load_S, diags, children):
-        res.scenarios[sc.id] = aggregate(m, sc, order, upstream, via, children, levels, load_S, load_missing, rules)
+        res.scenarios[sc.id] = aggregate(m, sc, order, upstream, via, children, levels, load_S, load_missing, rules,
+                                         pfu)
     res.load_missing = load_missing          # judge 에서 UNKNOWN 근거로 사용
+    res.load_assumed = load_assumed
     res.levels = levels
     res.children = children
     res.order = order

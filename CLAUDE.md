@@ -21,7 +21,7 @@ FHDL/
 │   ├── domains.py        # 설계 분야 레지스트리 (FHDL 유체 · EHDL 전기 — 시작 화면)
 ├── src/ehdl/             # EHDL 전기 설계·검산 엔진 (SPEC: docs/ehdl/) + rules/(원문 대조 규칙) + kb/(기준 원문 DB)
 │   └── gui/              # start_dialog(분야 선택) + main_window + panels/ (5패널) + log_console + library_dialog
-├── tests/                # pytest (280개)
+├── tests/                # pytest (291개)
 ├── resources/styles/     # dark_theme.qss
 ├── data/library.db       # 전역 부품 라이브러리
 ├── projects/             # 프로젝트별 작업공간
@@ -120,6 +120,7 @@ FHDL/
   - [x] Phase 2: 단락전류(IEC 60909)·차단용량·열적 내량·보호협조·전동기 기동·누전·SPD·보정계수 표(B.52.14~18)
   - [x] Phase 3: 접지계통(TN/TT/IT)·고장보호(자동차단)·PE·등전위본딩·수전 종합·설계 변경 영향
   - [x] SPEC 보완: 전선 규격 후보·최소 단락 순시 동작·혼합 모드·기동 방식·차단기 설정·변경 이력
+  - [x] DXF 가져오기(`ehdl/dxf_import.py`, `docs/ehdl/IMPORT.md`) · 역률 미입력 kVA 보수적 산술합 · 계통도 라벨 맞춤
 - [x] FHDL 구 명세 점검 보완: 입력 검증·중단/수렴·미저장 확인·되돌리기·실시간 검사·기본값 기록·라이브러리 DB 연결(KS/JIS/ANSI)·계산 보고서 PDF
   - [ ] 이후: 아이소메트릭 CAD (기본형 완성 후 — 사용자 결정)
 - [ ] **(차후 대형) 복합 루프망 Hardy-Cross** — `docs/ROADMAP.md` §1

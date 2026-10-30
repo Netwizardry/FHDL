@@ -41,6 +41,47 @@ def _status(res: EResult, ids) -> str:
     return worst(c.status for c in res.checks if c.target in ids)
 
 
+def _tw(s: str, h: float) -> float:
+    """글자 폭 추정(mm) — 렌더링 실측: 한글 ≈ 1.0h, 영숫자·기호 ≈ 0.72h."""
+    return sum(h * (1.0 if ord(ch) > 0x2E7F else 0.72) for ch in s)
+
+
+def _fit(s: str, width: float, h: float, max_lines: int = 2) -> List[str]:
+    """폭 안에 들어가게 줄바꿈(공백 우선) — 넘치면 마지막 줄을 '…' 로 줄인다."""
+    if _tw(s, h) <= width:
+        return [s]
+    out, cur = [], ""
+    for word in s.split(" "):
+        cand = (cur + " " + word).strip()
+        if _tw(cand, h) <= width or not cur:
+            cur = cand
+        else:
+            out.append(cur)
+            cur = word
+    out.append(cur)
+    lines = []
+    for ln in out:                                   # 공백 없는 긴 단어는 글자 단위로 자른다
+        while _tw(ln, h) > width and len(ln) > 1:
+            k = len(ln)
+            while k > 1 and _tw(ln[:k], h) > width:
+                k -= 1
+            lines.append(ln[:k])
+            ln = ln[k:]
+        lines.append(ln)
+    if len(lines) > max_lines:
+        lines = lines[:max_lines]
+        last = lines[-1]
+        while last and _tw(last + "…", h) > width:
+            last = last[:-1]
+        lines[-1] = last + "…"
+    return lines
+
+
+def _pw(r) -> str:
+    """유효전력 표시 — 역률 미입력 부하가 있으면 상한(≤)."""
+    return ("≤ " if r.S_extra > 0 else "") + fmt(r.P_max, "W")
+
+
 def build_sld(res: EResult, project: str = "", collapsed: Optional[Set[str]] = None,
               sheet_no: str = "1/1") -> Sheet:
     sheet = Sheet(title="계통 구성도 (단선결선도)", view="sld")
@@ -79,7 +120,12 @@ def build_sld(res: EResult, project: str = "", collapsed: Optional[Set[str]] = N
     left = x0 + 15.0 + ((x1 - x0 - 30.0) - dx * ncol) / 2 + dx / 2
     top = y1 - 16.0
     pos = {n: (left + col[n] * dx, top - depth[n] * dy) for n in order}
-    th = 2.2 if dx > 28 else 1.8
+    th = min(2.2, max(1.3, dx / 15.0))               # 칸이 좁으면 글자를 줄인다
+    avail = max(dx - 12.0, 9.0)                      # 기호 오른쪽(+5.5) ~ 다음 칸 판정 표식·기호 앞(−7.5)
+    stages = ({m.nodes[n].stage for n in order if m.nodes[n].type not in ("source", "spd")}
+              | {m.edges[e].stage for e in m.edges if m.edges[e].type == "cable"})   # 수전점·SPD 는 단계 구분 밖
+    mixed = len(stages) > 1                          # 기존/신규가 섞일 때만 [신규] 표시
+    tag = lambda st: "[신규] " if (mixed and st == "new") else ""  # noqa: E731  (앞에 붙여 줄임표에 잘리지 않게)
 
     # --- 배선·모선 ---------------------------------------------------------------
     for nid in order:
@@ -101,13 +147,15 @@ def build_sld(res: EResult, project: str = "", collapsed: Optional[Set[str]] = N
             if eid:
                 e = m.edges[eid]
                 r = sc.nodes.get(c)
-                lab = [eid + (" [신규]" if e.stage == "new" else "")]
+                lab = _fit(tag(e.stage) + eid, avail, th * 0.85, 1)
                 need = next((ck.actual for ck in res.checks if ck.id == f"{eid}:cable_size" and ck.actual), None)
                 spec = " ".join(x for x in (e.installed.get("material") or "",
                                             f"{e.installed['size']:g}㎟" if e.installed.get("size")
                                             else (f"요구 ≥{need:g}㎟" if need else "")) if x)
+                if e.installed.get("parallel") and int(e.installed["parallel"]) > 1:
+                    spec += f" ×{int(e.installed['parallel'])}"
                 if spec:
-                    lab.append(spec)
+                    lab += _fit(spec, avail, th * 0.85, 1)
                 if e.params.get("length") is not None:
                     lab.append(f"{e.params['length']:g}m")
                 ymid = (bus_y + cy + 5.0) / 2
@@ -124,26 +172,33 @@ def build_sld(res: EResult, project: str = "", collapsed: Optional[Set[str]] = N
         x, y = pos[nid]
         _symbol(sheet, n, (x, y), nid in collapsed)
         r = sc.nodes.get(nid)
-        lines = [(n.name if n.name and n.name != nid else nid) + (" [신규]" if n.stage == "new" else "")]
+        head = _fit(tag(n.stage) + (n.name if n.name and n.name != nid else nid), avail, th, 2)
+        lines = [""]                                  # [0] 자리 = 이름(head 로 따로 그림)
         rated = n.installed.get("rated_current") or n.installed.get("rated") or n.installed.get("limit_kw")
         unit = "A" if n.installed.get("rated_current") else ("VA" if n.installed.get("rated") else "W")
         if rated:
             lines.append(f"정격 {fmt(rated, unit, 0)}")
         if r is not None and n.type == "transformer":
-            lines.append(f"{fmt(r.S, 'VA')} · {fmt(r.P, 'W')}")
+            lines.append(f"{fmt(r.S, 'VA')} · {_pw(r)}")
         elif r is not None and n.type != "source" and r.current is not None:
-            lines.append(f"{fmt(r.current, 'A')} · {fmt(r.P, 'W')}")
+            full = f"{fmt(r.current, 'A')} · {_pw(r)}"
+            lines.append(full if _tw(full, th * 0.85) <= avail else fmt(r.current, "A"))   # 좁으면 전류만
         elif r is not None and n.type == "source":
-            lines.append(f"{fmt(r.P, 'W')} · {fmt(r.S, 'VA')}")
+            lines.append(f"{_pw(r)} · {fmt(r.S, 'VA')}")
         s = getattr(res, "sc", {}).get(nid)
         if s is not None and s.ik_max and n.type in ("transformer", "switchboard", "panel", "bus", "breaker", "rcd"):
-            lines.append(f"Ik'' {s.ik_max / 1000:.1f} kA" + (f" / Icu {n.installed['breaking_capacity'] / 1000:g} kA"
-                                                           if n.installed.get("breaking_capacity") else ""))
+            ik = f"Ik'' {s.ik_max / 1000:.1f} kA"
+            icu = f"Icu {n.installed['breaking_capacity'] / 1000:g} kA" if n.installed.get("breaking_capacity") else ""
+            if icu and _tw(f"{ik} / {icu}", th * 0.85) <= avail:
+                lines.append(f"{ik} / {icu}")
+            else:
+                lines += [x_ for x_ in (ik, icu) if x_]
         if nid in collapsed:
             hidden = len(_all_below(res, nid))
             lines.append(f"[접힘: 하위 {hidden}개]")
-        for k, t in enumerate(lines):
-            sheet.add(Text((x + 5.5, y + 2.0 - k * (th + 0.7)), t, height=th if k == 0 else th * 0.85,
+        body = [ln for t in lines[1:] for ln in _fit(t, avail, th * 0.85, 1)]
+        for k, t in enumerate(head + body):
+            sheet.add(Text((x + 5.5, y + 2.0 - k * (th + 0.7)), t, height=th if k < len(head) else th * 0.85,
                            layer="TEXT", ref=nid))
         ids = {nid} | (_all_below(res, nid) if nid in collapsed else set())
         st = _status(res, ids)
@@ -199,6 +254,7 @@ def build_sld(res: EResult, project: str = "", collapsed: Optional[Set[str]] = N
     frame.draw_notes(sheet, rx, yy, rw, [
         f"판정 기준 운전 조건: {sname} (대상별 가장 불리한 시나리오로 판정).",
         "● 색 = 그 설비·배선의 최악 판정. 접힌 반은 내부 포함."
+        + (" 모든 설비 신규(stage = new)." if (not mixed and "new" in stages) else "")
         + (f" 계통접지 {m.settings['earthing']}." if m.settings.get("earthing") else ""),
         "적용 기준: " + getattr(getattr(res, "rules", None), "version", "KEC"),
         "계통 구성도는 논리 연결도이며 시공 도면이 아니다(SPEC 1.3).",

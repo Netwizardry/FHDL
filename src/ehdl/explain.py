@@ -198,6 +198,10 @@ def explain(c: Check, name: str = "") -> None:
                          + ("; ".join(c.evidence.assumptions + c.evidence.defaults) or "형·감도 입력 필요") + ".")
         if c.evidence.assumptions:
             q.append(f"{who} 아래 누전에 상위 누전차단기도 함께 동작할 수 있습니다. 상위를 시연형(delayed)으로 하셨나요?")
+    elif c.kind == "load_input" and c.status == "REVIEW":
+        c.explanation = (f"{who}: " + "; ".join(c.evidence.assumptions) + ". 전류·용량 판정은 보수적인 값으로 하되 "
+                         "확정하지 않습니다.")
+        q.append(f"{who} 의 역률(pf)은 얼마인가요? (부하 일람표의 VA 만으로는 유효·무효전력을 나눌 수 없습니다)")
     elif c.kind == "load_input":
         c.explanation = f"{who}: 부하 전력을 계산하려면 {', '.join(c.missing)} 이(가) 필요합니다."
         q += [f"{who} 의 {m} 값을 알려 주실 수 있나요?" for m in c.missing]
