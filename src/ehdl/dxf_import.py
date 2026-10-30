@@ -235,7 +235,12 @@ def parse_panel_tables(texts: List[T], res: ImportResult) -> None:
         y_end = max(below) if below else hdr_y - 400 * h
         body = [u for u in texts if x_lo <= u.x <= x_hi and y_end < u.y < hdr_y - 0.8 * h]
         circuits, main, last = [], None, {}
-        for r in _rows(body, 0.6 * h):
+        rows = _rows(body, 0.6 * h)
+        for i in range(1, len(rows)):                  # 표 끝: 행 사이가 크게 벌어지면 다른 도면(아래쪽)
+            if rows[i - 1][0].y - rows[i][0].y > 8 * h:
+                rows = rows[:i]
+                break
+        for r in rows:
             cells: Dict[str, List[str]] = defaultdict(list)
             for u in r:
                 c = colz.of(u.x)
@@ -259,7 +264,7 @@ def parse_panel_tables(texts: List[T], res: ImportResult) -> None:
             circuits.append(dict(spec, no=no, name=nm, va=va, phases=phases))
         # 표 아래 주기: 'ELB는, 정격감도전류 15mA, 동작시간 0.03초 이하' — 없으면 도면 공통 주기
         notes = [u for u in texts if x_lo - 30 * h <= u.x <= x_hi and y_end < u.y < hdr_y]
-        elb = _elb_note(notes) or _elb_note(texts)
+        elb = _elb_note(notes)              # 그 표의 주기만 — 다른 표의 감도를 큰 차단기에 옮기지 않는다
         res.panels[name] = {"name": name, "from": frm, "main": main, "circuits": circuits, "x": t.x, "y": t.y,
                             "elb": elb}
         if main and main.get("va") is not None:
@@ -535,7 +540,9 @@ def build_dsl(res: ImportResult, dxf_name: str = "") -> str:
     for n in res.notes:
         w(f"// {n}")
     w("system plant { frequency = 60Hz; }")
-    w("source KEPCO { name = \"한전 수전점\"; voltage = 22.9kV; phases = 3; }")
+    pv = next((b["primary"] for b in res.boards if b.get("primary")), None)
+    w("source KEPCO { name = \"한전 수전점\"; " + (f"voltage = {pv / 1000:g}kV; " if pv else "") + "phases = 3; }"
+      + ("" if pv else "   // 수전 전압: 도면에서 찾지 못함 — voltage 를 지정하세요"))
     panel_names = set(res.panels) | {m for m in res.motors}
     fed_by_board: Dict[str, str] = {}
     for i, b in enumerate(res.boards, 1):
@@ -699,9 +706,16 @@ def cross_check(res: ImportResult) -> None:
     ]
 
 
+class DXFImportError(Exception):
+    pass
+
+
 def import_dxf(path: str) -> ImportResult:
     import os
-    texts = read_texts(path)
+    try:
+        texts = read_texts(path)
+    except Exception as e:                                 # ezdxf 는 잘린 파일에 StopIteration 등을 낸다
+        raise DXFImportError(f"DXF 를 읽을 수 없습니다: {os.path.basename(path)} — {type(e).__name__}: {e}") from e
     res = ImportResult()
     parse_one_lines(texts, res)
     parse_panel_tables(texts, res)
@@ -713,6 +727,8 @@ def import_dxf(path: str) -> ImportResult:
             res.notes.append(f"도면 접지 방식: {m.group(1)} — earthing 을 지정하세요")
             break
     cross_check(res)
+    if not (res.panels or res.boards or res.cables or res.motors):
+        res.warnings.insert(0, "인식된 표가 없습니다 — 부하 일람표·CABLE SCHEDULE·단선결선도 양식인지 확인하세요")
     res.source = build_dsl(res, os.path.basename(path))
     return res
 
@@ -730,7 +746,11 @@ def main(argv=None) -> int:
     ap.add_argument("dxf")
     ap.add_argument("-o", "--out", help="출력 .ehd (생략 시 표준 출력)")
     a = ap.parse_args(argv)
-    res = import_dxf(a.dxf)
+    try:
+        res = import_dxf(a.dxf)
+    except DXFImportError as e:
+        print(e)
+        return 2
     if a.out:
         with open(a.out, "w", encoding="utf-8") as f:
             f.write(res.source)

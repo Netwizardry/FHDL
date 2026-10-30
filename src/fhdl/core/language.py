@@ -22,7 +22,7 @@ ATTR_KEYWORDS = (
     "z", "elevation", "x", "y",
     "flow", "head", "length", "diameter", "material", "fittings",
     "required_q", "required_p", "k_factor", "c_factor", "roughness",
-    "volume", "level_max", "efficiency", "npshr",
+    "volume", "level_max", "level_min", "efficiency", "npshr",
     "pump_type", "min_level", "submerge_ref",
     "temp", "altitude", "unit_system", "fluid", "friction_model",
     "velocity_min", "velocity_max", "safety_factor_head", "safety_factor_npsh",
@@ -46,7 +46,7 @@ _XYZ = {"x": "number", "y": "number", "z": "length", "elevation": "length"}
 BLOCK_ATTRS = {
     "system": {"unit_system": "enum", "fluid": "enum", "temp": "temp", "altitude": "length",
                "friction_model": "enum"},
-    "tank": {**_XYZ, "volume": "volume", "level_max": "length"},
+    "tank": {**_XYZ, "volume": "volume", "level_max": "length", "level_min": "length"},
     "pump": {**_XYZ, "flow": "flow", "head": "length", "efficiency": "ratio", "npshr": "length",
              "curve_id": "text", "pump_type": "enum", "min_level": "length", "submerge_ref": "id"},
     "junction": dict(_XYZ),
@@ -83,4 +83,12 @@ VALUE_RANGES = {
     "c_factor": (40.0, 160.0),
     "safety_factor_head": (1.0, 3.0),
     "safety_factor_npsh": (1.0, 3.0),
+}
+
+# 부호 규칙 (위반 → 오류 SEM014): pos = 0 보다 커야, nonneg = 0 이상
+SIGN_RULES = {
+    "diameter": "pos", "c_factor": "pos", "velocity_max": "pos", "velocity_min": "nonneg",
+    "efficiency": "pos", "roughness": "nonneg", "k_factor": "nonneg", "required_q": "nonneg",
+    "required_p": "nonneg", "level_max": "nonneg", "level_min": "nonneg", "volume": "pos", "npshr": "nonneg", "min_level": "nonneg",
+    "safety_factor_head": "pos", "safety_factor_npsh": "pos", "flow": "nonneg", "head": "nonneg",
 }

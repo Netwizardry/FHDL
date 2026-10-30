@@ -66,9 +66,17 @@ def _write_meta(project_dir: str, meta: dict) -> None:
     Path(p).write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
+def _atomic_write(path: str, text: str) -> None:
+    tmp = path + ".tmp"
+    Path(tmp).write_text(text, encoding="utf-8")
+    if Path(tmp).read_text(encoding="utf-8") != text:
+        raise OSError(f"저장 검증 실패: {path}")
+    os.replace(tmp, path)
+
+
 def save_project(project_dir: str, source: str,
                  result: Optional[AnalysisResult] = None,
-                 name: str = "", write_fhd: bool = True) -> None:
+                 name: str = "", write_fhd: bool = True, result_source: Optional[str] = None) -> None:
     """프로젝트를 저장한다.
 
     - write_fhd=True 면 main.fhd 를 원자적으로 저장(stage→verify→swap).
@@ -78,17 +86,31 @@ def save_project(project_dir: str, source: str,
     """
     from ..db.project_db import ProjectDB
 
+    import sqlite3
     os.makedirs(project_dir, exist_ok=True)
     paths = project_paths(project_dir)
     checksum = _checksum(source)
+    # 결과 캐시의 체크섬은 '그 결과를 낸 소스' 기준 — 해석 뒤 편집하고 저장하면 캐시가 무효로 남는다
+    result_checksum = _checksum(result_source if result_source is not None else source)
+    if result is not None and result.status in ("FAILED", "CANCELLED"):
+        result = None
 
-    db = ProjectDB(paths["db"])
+    try:
+        db = ProjectDB(paths["db"])
+    except sqlite3.Error:
+        # 손상된 state.db — 옆으로 치우고 새로 (사용자 코드 저장을 막지 않는다)
+        bak = paths["db"] + ".corrupt"
+        os.replace(paths["db"], bak)
+        db = ProjectDB(paths["db"])
     try:
         if write_fhd:
-            db.atomic_save_fhd(paths["fhd"], source)    # 원자적 저장
+            try:
+                db.atomic_save_fhd(paths["fhd"], source)    # 원자적 저장
+            except sqlite3.Error:
+                _atomic_write(paths["fhd"], source)
         if result is not None:
             db.save_analysis_result(result)
-            db.set_meta("analyzed_checksum", checksum)  # 캐시 유효성 기준
+            db.set_meta("analyzed_checksum", result_checksum)  # 캐시 유효성 기준
     finally:
         db.close()
 
@@ -120,13 +142,21 @@ def load_project(project_dir: str) -> ProjectLoad:
     paths = project_paths(project_dir)
     source = ""
     if os.path.exists(paths["fhd"]):
-        source = Path(paths["fhd"]).read_text(encoding="utf-8")
+        raw = Path(paths["fhd"]).read_bytes()
+        try:
+            source = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            source = raw.decode("cp949", errors="replace")
     meta = read_meta(project_dir)
 
     result: Optional[AnalysisResult] = None
     cache_valid = False
     if source and os.path.exists(paths["db"]):
-        db = ProjectDB(paths["db"])
+        import sqlite3
+        try:
+            db = ProjectDB(paths["db"])
+        except sqlite3.Error:
+            return ProjectLoad(source=source, meta=dict(meta, cache_error=True), result=None, cache_valid=False)
         try:
             # 미완료 저장(DIRTY) 복구 — 복구되면 캐시를 신뢰하지 않음
             recovered = db.recover()

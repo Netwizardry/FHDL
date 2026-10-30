@@ -43,11 +43,15 @@ def block_diff(old_src: str, new_src: str) -> List[dict]:
 
 
 def describe(edit: dict) -> str:
-    name = {"added": "추가", "removed": "삭제", "modified": "수정"}[edit["change"]]
-    if edit["change"] == "modified":
-        parts = [f"{k} {o if o is not None else '∅'}→{n if n is not None else '∅'}" for k, (o, n) in edit["attrs"].items()]
+    ch = edit.get("change", "modified")
+    name = {"added": "추가", "removed": "삭제", "modified": "수정"}.get(ch, ch)
+    if ch == "modified":
+        parts = []
+        for k, v in (edit.get("attrs") or {}).items():
+            o, n = (list(v) + [None, None])[:2] if isinstance(v, (list, tuple)) else (None, v)
+            parts.append(f"{k} {o if o is not None else '∅'}→{n if n is not None else '∅'}")
         return f"{edit['id']} {name}: " + ", ".join(parts)
-    return f"{edit['id']}({edit['type']}) {name}"
+    return f"{edit['id']}({edit.get('type', '?')}) {name}"
 
 
 def make_entry(old_src: str, new_src: str, old_res=None, new_res=None, note: str = "") -> Optional[dict]:
@@ -87,15 +91,18 @@ def load(ehd_path: Optional[str]) -> List[dict]:
             line = line.strip()
             if line:
                 try:
-                    out.append(json.loads(line))
+                    e = json.loads(line)
                 except json.JSONDecodeError:
                     continue                    # 손상된 줄은 건너뛴다 (나머지 이력 보존)
+                if isinstance(e, dict) and isinstance(e.get("time"), str) and isinstance(e.get("edits", []), list):
+                    e["edits"] = [x for x in e.get("edits", []) if isinstance(x, dict) and "id" in x]
+                    out.append(e)
     return out
 
 
 def for_target(entries: List[dict], target: str) -> List[Tuple[str, str]]:
     """이 설비·배선이 바뀐 저장 시점들 — [(시각, 설명)]."""
-    return [(e["time"], describe(x)) for e in entries for x in e.get("edits", []) if x["id"] == target]
+    return [(e["time"], describe(x)) for e in entries for x in e.get("edits", []) if x.get("id") == target]
 
 
 def table(entries: List[dict]) -> dict:

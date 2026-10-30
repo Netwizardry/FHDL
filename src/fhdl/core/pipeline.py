@@ -29,7 +29,23 @@ class AnalysisPipeline:
         cancel_fn(): True이면 중단.
         status_fn(msg): 진행 상태 메시지 콜백.
         library: LibraryDB(선택). 펌프 curve_id 의 커브 포인트를 주입한다.
+        예외를 던지지 않는다 — 내부 오류는 FATAL INT001 진단으로 돌려준다.
         """
+        try:
+            return self._run(source_code, output_dir, cancel_fn, status_fn, library)
+        except Exception as e:                       # 최후 방어선: 해석기는 GUI·명령을 죽이지 않는다
+            import traceback
+            r = AnalysisResult()
+            r.diagnostics.append(DiagnosticItem(
+                code="INT001", severity="FATAL",
+                message=f"내부 오류로 해석을 끝내지 못했습니다: {type(e).__name__}: {e}",
+                source_span=SourceSpan(),
+                suggested_action="입력 값을 확인하세요. 계속되면 이 메시지와 입력을 보고해 주세요.\n"
+                                 + traceback.format_exc(limit=3)))
+            r.status = "FAILED"
+            return r
+
+    def _run(self, source_code, output_dir, cancel_fn, status_fn, library) -> AnalysisResult:
         result = AnalysisResult()
 
         def _status(msg: str):

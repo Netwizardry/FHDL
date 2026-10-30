@@ -9,6 +9,7 @@ from PySide6.QtGui import (
     QColor, QFont, QPainter, QPaintEvent, QTextCursor,
 )
 from PySide6.QtWidgets import (
+    QTextEdit,
     QComboBox, QDialog, QDialogButtonBox, QFormLayout, QGroupBox,
     QHBoxLayout, QLabel, QLineEdit, QPlainTextEdit, QPushButton,
     QScrollArea, QSpinBox, QStackedWidget, QTextBrowser, QVBoxLayout, QWidget,
@@ -67,10 +68,14 @@ class FHDLEditor(QPlainTextEdit):
         self._update_gutter_width()
 
     def load_file(self, path: str):
+        """파일을 읽어 넣는다. 읽기 실패는 예외로 — 오류 문구를 소스로 넣으면 저장 시 원본을 덮어쓴다."""
+        raw = Path(path).read_bytes()
         try:
-            self.setPlainText(Path(path).read_text(encoding="utf-8"))
-        except Exception as e:
-            self.setPlainText(f"// 파일 읽기 오류: {e}")
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            text = raw.decode("cp949")                     # 한글 Windows 메모장 저장본 (실패하면 예외)
+            self.decoded_fallback = True
+        self.setPlainText(text)
 
     def save_file(self, path: str):
         Path(path).write_text(self.toPlainText(), encoding="utf-8")
@@ -86,7 +91,7 @@ class FHDLEditor(QPlainTextEdit):
             if block.isValid():
                 sel = QTextCursor(block)
                 sel.select(QTextCursor.SelectionType.LineUnderCursor)
-                extra = self.ExtraSelection()
+                extra = QTextEdit.ExtraSelection()
                 extra.format.setBackground(QColor(80, 20, 20))
                 extra.cursor = sel
                 extras.append(extra)

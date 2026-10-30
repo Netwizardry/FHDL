@@ -79,13 +79,21 @@ def start_vdrop(res: EResult, rules: RuleSet, mid: str, scenario: Optional[str] 
     lam0 = rules.values("REACTANCE_DEFAULT")["x_ohm_per_m"]
     total = 0.0
 
-    def seg_current(nid: str, V: float) -> complex:
+    # 단상 전동기: 배선 왕복(부속서 G b = 2, U0 기준) — 선간 접속은 V_LL 기준이라 U0 환산 2/√3
+    ll = (mo.params.get("phase") or "") in ("L1L2", "L2L3", "L3L1")
+    b_m = 1.0 if mo.params.get("phases") != 1 else (2.0 / SQRT3 if ll else 2.0)
+    if b_m != 1.0:
+        notes.append(f"단상 전동기 — 배선 강하 b = {b_m:.2f}(U0 기준)")
+
+    def seg_current(nid: str, V: float, cable: bool = False) -> complex:
         r = sc.nodes[nid]
         i = complex(r.P, -r.Q) / (SQRT3 * V)
+        if r.S_extra > 0:                        # 역률 미입력 부하 — 기동전류와 같은 위상으로 더함(보수적)
+            i += abs(r.S_extra) / (SQRT3 * V) * (ist_ph / abs(ist_ph) if abs(ist_ph) else 1)
         if running:
             mr = sc.nodes[mid]
             i -= complex(mr.P, -mr.Q) / (SQRT3 * V)
-        return i + ist_ph * (v_m / V)
+        return i + ist_ph * (v_m / V) * (b_m if cable else 1.0)
 
     for nid in _path(res, mid):
         n = m.nodes[nid]
@@ -129,6 +137,6 @@ def start_vdrop(res: EResult, rules: RuleSet, mid: str, scenario: Optional[str] 
         par = int(e.installed.get("parallel") or 1)
         R = rho1[mat] / S / par
         X = (e.params.get("x") or lam0) / par
-        I = seg_current(nid, V)
+        I = seg_current(nid, V, cable=True)
         total += L * (R * I.real + X * (-I.imag)) / (V / SQRT3) * 100
     return total, i_st, notes, []

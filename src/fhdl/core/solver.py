@@ -89,7 +89,8 @@ class HydraulicSolver:
         self.iterations = 0
         self.residual = 0.0
         self._diags: List[DiagnosticItem] = []
-        self._pump_suction: Dict[str, float] = {}
+        self._pump_suction: Dict[str, float] = {}       # 운전 흡입수두 (탱크 최고 수위 level_max 기준)
+        self._pump_suction_min: Dict[str, float] = {}   # 설계 흡입수두 (최저 수위 level_min 기준 — NPSHa·요구 양정)
         self._pipe_lookup: Optional[Dict] = None
 
         self._nu = self.fluid.kinematic_viscosity
@@ -306,16 +307,28 @@ class HydraulicSolver:
         res: Dict[str, float] = {}
         for pid, pump in self.em.pumps.items():
             suction = pump.elevation
-            for up in rev_adj.get(pid, []):
+            # 상류로 거슬러 올라가 공급 탱크를 찾는다 (접합점을 거쳐도) — 흡입수두 = 탱크 수면 − 경로 손실
+            suction_min = pump.elevation
+            cur, loss, seen = pid, 0.0, {pid}
+            while True:
+                ups = [u for u in rev_adj.get(cur, []) if u not in seen]
+                if not ups:
+                    break
+                up = ups[0]
+                seen.add(up)
+                p_ = self._get_pipe(up, cur)
+                if p_ is not None:
+                    loss += self._pipe_loss(p_, pipe_q.get(p_.entity_id, 0.0))
                 if up in self.em.tanks:
                     tk = self.em.tanks[up]
-                    suction = tk.elevation + tk.level_max
-                    suc_pipe = self._get_pipe(up, pid)
-                    if suc_pipe is not None:
-                        q = pipe_q.get(suc_pipe.entity_id, 0.0)
-                        suction -= self._pipe_loss(suc_pipe, q)
+                    suction = tk.elevation + tk.level_max - loss
+                    suction_min = tk.elevation + tk.level_min - loss
                     break
+                if up in self.em.pumps:                      # 직렬 펌프: 앞 펌프 토출까지만
+                    break
+                cur = up
             self._pump_suction[pid] = suction
+            self._pump_suction_min[pid] = suction_min if suction_min != pump.elevation else suction
             boost = self._pump_boost(pump, node_demand.get(pid, 0.0))
             res[pid] = suction + boost
         return res
@@ -457,19 +470,32 @@ class HydraulicSolver:
             if term:
                 demand[tid] = term.required_q
 
-        # BFS 역방향 탐색
-        queue = list(terminals)
-        visited: Set[str] = set(terminals)
-        while queue:
-            nid = queue.pop(0)
+        # 역위상 순서(하류가 모두 끝난 노드부터) 누적 — 깊이가 다른 가지의 유량도 빠짐없이 상류로 전달
+        pending: Dict[str, int] = {}
+        for nid, ups in rev_adj.items():
+            for up in ups:
+                pending[up] = pending.get(up, 0) + 1          # 하류로 나가는 연결 수(병렬 배관은 중복 포함)
+        nodes = set(rev_adj) | set(pending) | set(terminals)
+        ready = [n for n in nodes if pending.get(n, 0) == 0]
+        done: Set[str] = set()
+        while ready:
+            nid = ready.pop()
+            done.add(nid)
             upstreams = rev_adj.get(nid, [])
             total_q = demand.get(nid, 0.0)
             n_up = len(upstreams)
             for up in upstreams:
                 demand[up] = demand.get(up, 0.0) + total_q / max(n_up, 1)
-                if up not in visited:
-                    visited.add(up)
-                    queue.append(up)
+                pending[up] -= 1
+                if pending[up] == 0:
+                    ready.append(up)
+        # 순환(NET004 경고)으로 남은 노드는 기존 방식대로 한 번 더 전달
+        for nid in nodes - done:
+            ups = rev_adj.get(nid, [])
+            for up in ups:
+                if up in done:
+                    continue
+                demand[up] = demand.get(up, 0.0) + demand.get(nid, 0.0) / max(len(ups), 1)
 
         # 배관별 유량 결정 (말단=end_node demand 기반)
         #   배관 (a→b)의 통과 유량 = b 하류 누적 요구유량을, b로 들어오는
@@ -495,7 +521,35 @@ class HydraulicSolver:
                     pipe.diameter.value = self._diameters[min(2, len(self._diameters) - 1)]  # 기본 최소값
                     pipe.diameter.mode = "AUTO"
 
+        self._split_parallel(pipe_q)
         return demand, pipe_q
+
+    def _split_parallel(self, pipe_q: Dict[str, float]) -> None:
+        """같은 두 노드 사이 병렬 배관 — 손실수두가 같아지도록 유량을 나눈다 (h ≈ R·Q^n 반복)."""
+        groups: Dict[Tuple[str, str], List] = {}
+        for p in self.em.pipes.values():
+            groups.setdefault((p.start_id, p.end_id), []).append(p)
+        n = 1.852 if self.em.fluid.friction_model == "HW" else 2.0
+        for ps in groups.values():
+            if len(ps) < 2:
+                continue
+            total = sum(pipe_q.get(p.entity_id, 0.0) for p in ps)
+            if total <= 0:
+                continue
+            q = {p.entity_id: total / len(ps) for p in ps}
+            for _ in range(20):
+                w = {}
+                for p in ps:
+                    qi = max(q[p.entity_id], total * 1e-6)
+                    R = self._pipe_loss(p, qi) / qi ** n
+                    w[p.entity_id] = R ** (-1.0 / n) if R > 0 else 1.0
+                sw = sum(w.values())
+                new = {k: total * v / sw for k, v in w.items()}
+                diff = max(abs(new[k] - q[k]) for k in q)
+                q = new
+                if diff < total * 1e-6:
+                    break
+            pipe_q.update(q)
 
     def _select_diameter(self, q: float) -> float:
         """유속 제약(v_max)을 만족하는 최소 표준 관경 선정"""
@@ -507,7 +561,7 @@ class HydraulicSolver:
                 return d
         # 최대 관경으로도 불가
         self._err("CAL005",
-                  f"요구 유량 {q*1e6:.1f} L/s 에 대해 유속 제약({v_max}m/s)을 만족하는 표준 관경이 없습니다.",
+                  f"요구 유량 {q*1e3:.1f} L/s 에 대해 유속 제약({v_max}m/s)을 만족하는 표준 관경이 없습니다.",
                   SourceSpan(),
                   "velocity_max 제한을 완화하거나 요구 유량을 줄이세요.")
         return self._diameters[-1]
@@ -647,7 +701,8 @@ class HydraulicSolver:
                 p_atm = self._atm_pa_at(nid)
                 h_atm = p_atm / (self._rho * G)
                 h_vap = self._p_vap / (self._rho * G)
-                h_s = self._pump_suction.get(nid, pump.elevation) - pump.elevation
+                # NPSHa 는 최저 운전 수위 기준 (HI 관행 — 최고 수위로 보면 과대 평가)
+                h_s = self._pump_suction_min.get(nid, pump.elevation) - pump.elevation
                 npsha = h_atm + h_s - h_vap
                 if npsha < pump.npshr * self.em.constraints.safety_factor_npsh:
                     self._warn("WRN003",
@@ -752,12 +807,14 @@ class HydraulicSolver:
         total_q = sum(t.required_q for t in self.em.terminals.values())
         summary.total_flow = total_q
 
-        # 최불리 경로 탐색: 소스에서 각 터미널까지 경로 중 최대 요구 수두
-        source_head = 0.0
-        for src in sources:
-            h = head.get(src, 0.0)
-            if h > source_head:
-                source_head = h
+        # 최불리 경로 탐색: 각 말단은 '그 말단에 물을 대는' 경로 시작점(탱크 수면 또는 흡입 측 펌프)을 기준으로 한다
+        def _root_head(nid: str) -> float:
+            if nid in self.em.tanks:
+                tk = self.em.tanks[nid]
+                return tk.elevation + tk.level_min            # 요구 양정은 최저 수위에서 (불리한 쪽)
+            if nid in self.em.pumps:
+                return self._pump_suction_min.get(nid, self.em.pumps[nid].elevation)
+            return self._node_elevation(nid)
 
         # 배관 손실 / 상류 배관 조회 맵 (트리 가정: 노드당 진입 배관 1개)
         loss_by_pipe = {pr.pipe_id: abs(pr.h_loss_total) for pr in pipe_results}
@@ -786,7 +843,8 @@ class HydraulicSolver:
                 for n in path if n in incoming_pipe
             )
             req_static = term.elevation + term.required_p / (self._rho * G)
-            total_head = (req_static - source_head) + path_loss
+            # 경로의 펌프 양정은 빼지 않는다 → '필요한 펌프 양정' (수동 양정 펌프의 흡입 손실 이중 계산 방지)
+            total_head = (req_static - _root_head(path[0])) + path_loss
             if total_head > max_total_head:
                 max_total_head = total_head
                 summary.worst_path = path

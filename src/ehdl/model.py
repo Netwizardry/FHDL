@@ -162,6 +162,9 @@ class NodeResult:
     path_length: float = 0.0
     # 역률 미입력 피상전력(kVA 정격) — 위상을 모르므로 따로 산술합 (|ΣS| ≤ |Σ알려진 S| + Σ|S미입력| → 보수적 상한)
     S_extra: float = 0.0
+    unassigned_S: float = 0.0                 # 접속 상 미지정 단상 부하 |S| 합
+    unassigned_max: float = 0.0
+    current_lb: Optional[float] = None        # 상 미지정이 있을 때 전류 하한 (상한 = current)
     phase_extra: Tuple[float, float, float] = (0.0, 0.0, 0.0)
     pf_unknown: List[str] = field(default_factory=list)       # 역률 미입력 부하 ID
 

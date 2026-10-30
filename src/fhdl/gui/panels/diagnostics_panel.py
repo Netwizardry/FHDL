@@ -43,8 +43,11 @@ class DiagnosticsPanel(QWidget):
         header.addWidget(title)
         header.addStretch()
 
+        self._shown = {"FATAL", "ERROR", "WARNING", "INFO"}
+        self._filter_btns = {}
         for label, sev in [("E", "ERROR"), ("W", "WARNING"), ("I", "INFO")]:
             btn = QPushButton(label)
+            self._filter_btns[sev] = btn
             btn.setFixedSize(22, 22)
             btn.setCheckable(True)
             btn.setChecked(True)
@@ -98,7 +101,7 @@ class DiagnosticsPanel(QWidget):
             groups.setdefault(d.severity, []).append(d)
 
         for sev, diags in groups.items():
-            if not diags:
+            if not diags or sev not in getattr(self, "_shown", groups):
                 continue
             group_item = QTreeWidgetItem([sev, f"({len(diags)}개)", "", ""])
             color = QColor(_SEVERITY_COLORS.get(sev, "#CCC"))
@@ -116,7 +119,10 @@ class DiagnosticsPanel(QWidget):
             group_item.setExpanded(True)
 
     def _apply_filter(self):
-        # 필터링은 간단하게 re-render
+        """E/W/I 버튼 — 켠 심각도만 보인다 (E 는 FATAL 포함)."""
+        self._shown = {sev for sev, b in self._filter_btns.items() if b.isChecked()}
+        if "ERROR" in self._shown:
+            self._shown.add("FATAL")
         self._render()
 
     def _on_double_click(self, item: QTreeWidgetItem, col: int):

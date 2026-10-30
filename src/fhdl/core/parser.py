@@ -23,7 +23,7 @@ from .models import (
 def _parse_value_unit(raw: str) -> Tuple[float, str]:
     """'10m' -> (10.0, 'm'), '1.5MPa' -> (1.5, 'MPa'), '120' -> (120.0, '')"""
     raw = raw.strip()
-    m = re.match(r'^([+-]?[\d.]+(?:[eE][+-]?\d+)?)\s*([a-zA-Z%/³°][a-zA-Z0-9%/³°]*)?\s*$', raw)
+    m = re.match(r'^([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)\s*([a-zA-Z%/³°][a-zA-Z0-9%/³°]*)?\s*$', raw)
     if not m:
         return (0.0, "")
     return (float(m.group(1)), (m.group(2) or "").strip())
@@ -46,9 +46,37 @@ class FHDLParser:
         self._ast: List[ASTNode] = []
 
         clean = self._strip_comments(source)
+        # 값 안의 중괄호(fittings = {elbow_90*2}) 는 [ ] 로 — 블록 경계 { } 와 헷갈리지 않게(길이 보존)
+        clean = re.sub(r"=\s*\{([^{}]*)\}", lambda m: m.group(0).replace("{", "[").replace("}", "]"), clean)
+        self._check_braces(clean, source)
         self._parse_statements(clean, source)
 
         return self._ast, self._diagnostics
+
+    def _check_braces(self, clean: str, raw: str):
+        """중괄호 짝 검사 — 닫히지 않은 블록은 다음 블록 속성을 삼킨다(SYN003)."""
+        depth, open_at = 0, None
+        for i, ch in enumerate(clean):
+            if ch == "{":
+                if depth == 0:
+                    open_at = i
+                depth += 1
+                if depth > 1:
+                    self._add_error("SYN003", "블록 안에 다시 '{' 가 있습니다 — 앞 블록의 '}' 가 빠졌나요?",
+                                    self._span_at(raw, open_at))
+                    return
+            elif ch == "}":
+                depth -= 1
+                if depth < 0:
+                    self._add_error("SYN003", "짝이 없는 '}' 입니다.", self._span_at(raw, i))
+                    return
+        if depth > 0:
+            self._add_error("SYN003", "블록의 닫는 '}' 가 없습니다.", self._span_at(raw, open_at))
+
+    def _span_at(self, raw: str, pos: int) -> SourceSpan:
+        line = raw[:pos].count("\n") + 1
+        col = pos - raw[:pos].rfind("\n") - 1
+        return SourceSpan(line=line, col=col, end_line=line, end_col=col + 1)
 
     # ------------------------------------------------------------------
     # 주석 제거
@@ -154,8 +182,8 @@ class FHDLParser:
     def _parse_attributes(self, block: str) -> Dict[str, Any]:
         attrs: Dict[str, Any] = {}
         for m in re.finditer(
-            r'(\w+)\s*=\s*([^;]+?)\s*;',
-            block
+            r'(\w+)\s*=\s*([^;]+?)\s*(?:;|$)',          # 블록 마지막 속성은 ; 생략 가능
+            block.strip()
         ):
             key = m.group(1).lower().strip()
             raw_val = m.group(2).strip()
@@ -168,9 +196,9 @@ class FHDLParser:
         # 불리언
         if raw.lower() in ("true", "yes"): return True
         if raw.lower() in ("false", "no"): return False
-        # 수치+단위
-        val, unit = _parse_value_unit(raw)
-        if unit or re.match(r'^[+-]?[\d.]+$', raw):
+        # 수치+단위 (1.2.3 · . 같은 잘못된 수는 문자열로 남겨 의미 분석이 SEM012 로 알린다)
+        if re.match(r'^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?\s*([a-zA-Z%/³°][a-zA-Z0-9%/³°]*)?\s*$', raw):
+            val, unit = _parse_value_unit(raw)
             return (val, unit) if unit else val
         # 그 외 문자열
         return raw.strip('"\'')
@@ -205,74 +233,61 @@ class FHDLParser:
 # ---------------------------------------------------------------------------
 
 def serialize_entity_map_to_fhd(entity_map) -> str:
-    """EntityMap 객체를 FHDL DSL 텍스트로 직렬화한다."""
-    from .models import EntityMap, PipeEntity, SizingState
+    """EntityMap → FHDL DSL 텍스트 (왕복 보존: 다시 파싱하면 같은 엔티티).
+
+    값은 :g 로 정밀도 손실 없이 쓰고, 기본값과 다른 속성·명시한 속성을 모두 내보낸다."""
+    from .models import EntityMap
     em: EntityMap = entity_map
-    lines = []
+    out = []
 
-    fluid = em.fluid
-    lines.append(f"system main {{")
-    lines.append(f"    unit_system = {fluid.unit_system};")
-    lines.append(f"    fluid = {fluid.fluid_type};")
-    lines.append(f"    temp = {fluid.temp};")
-    lines.append(f"    altitude = {fluid.altitude};")
-    lines.append(f"    friction_model = {fluid.friction_model};")
-    lines.append("}\n")
+    def block(head, rows):
+        out.append(head + " {")
+        out.extend(f"    {r}" for r in rows if r)
+        out.append("}\n")
 
+    def xy(e):
+        return f"x = {e.x:.12g}; y = {e.y:.12g};" if e.has_xy else ""
+
+    f = em.fluid
+    block("system main", [f"unit_system = {f.unit_system};", f"fluid = {f.fluid_type};", f"temp = {f.temp:.12g};",
+                          f"altitude = {f.altitude:.12g}m;", f"friction_model = {f.friction_model};"])
     for t in em.tanks.values():
-        lines.append(f"tank {t.entity_id} {{")
-        lines.append(f"    z = {t.elevation}m;")
-        if t.has_xy:
-            lines.append(f"    x = {t.x}; y = {t.y};")
-        if t.volume != float("inf"):
-            lines.append(f"    volume = {t.volume}m3;")
-        lines.append("}\n")
-
+        block(f"tank {t.entity_id}", [f"z = {t.elevation:.12g}m;", xy(t),
+                                      f"volume = {t.volume:.12g}m3;" if t.volume != float("inf") else "",
+                                      f"level_max = {t.level_max:.12g}m;", f"level_min = {t.level_min:.12g}m;"])
     for p in em.pumps.values():
-        lines.append(f"pump {p.entity_id} {{")
-        lines.append(f"    z = {p.elevation}m;")
-        if p.has_xy:
-            lines.append(f"    x = {p.x}; y = {p.y};")
-        if p.flow.mode == "MANUAL":
-            lines.append(f"    flow = {p.flow.value}m3s;")
-        if p.head.mode == "MANUAL":
-            lines.append(f"    head = {p.head.value}m;")
-        lines.append("}\n")
-
+        block(f"pump {p.entity_id}", [
+            f"z = {p.elevation:.12g}m;", xy(p),
+            f"flow = {p.flow.value:.12g}m3s;" if p.flow.mode == "MANUAL" else "flow = auto;",
+            f"head = {p.head.value:.12g}m;" if p.head.mode == "MANUAL" else "head = auto;",
+            f"efficiency = {p.efficiency:.12g};", f"npshr = {p.npshr:.12g}m;", f"pump_type = {p.pump_type};",
+            f"min_level = {p.min_level:.12g}m;" if p.min_level else "",
+            f"submerge_ref = {p.submerge_ref};" if p.submerge_ref else "",
+            f"curve_id = {p.curve_id};" if p.curve_id else ""])
     for j in em.junctions.values():
-        lines.append(f"junction {j.entity_id} {{")
-        lines.append(f"    z = {j.elevation}m;")
-        if j.has_xy:
-            lines.append(f"    x = {j.x}; y = {j.y};")
-        lines.append("}\n")
-
+        block(f"junction {j.entity_id}", [f"z = {j.elevation:.12g}m;", xy(j)])
     for t in em.terminals.values():
-        lines.append(f"terminal {t.entity_id} {{")
-        lines.append(f"    z = {t.elevation}m;")
-        if t.has_xy:
-            lines.append(f"    x = {t.x}; y = {t.y};")
-        if t.required_q > 0:
-            lines.append(f"    required_q = {t.required_q * 1e6:.2f}Ls;")
-        if t.required_p > 0:
-            lines.append(f"    required_p = {t.required_p / 1e6:.4f}MPa;")
-        lines.append("}\n")
-
+        block(f"terminal {t.entity_id}", [
+            f"z = {t.elevation:.12g}m;", xy(t),
+            f"required_q = {t.required_q * 1e3:.12g}Ls;" if t.required_q > 0 else "",
+            f"required_p = {t.required_p / 1e6:.12g}MPa;" if t.required_p > 0 else "",
+            f"k_factor = {t.k_factor:.12g};" if t.k_factor else "",
+            f"preset_id = {t.preset_id};" if t.preset_id else ""])
     for pipe in em.pipes.values():
-        lines.append(f"pipe {pipe.entity_id} {{")
-        lines.append(f"    start = {pipe.start_id};")
-        lines.append(f"    end = {pipe.end_id};")
-        if pipe.length > 0:
-            lines.append(f"    length = {pipe.length}m;")
         dia = pipe.diameter
-        if dia.mode == "AUTO":
-            lines.append(f"    diameter = auto;")
-        else:
-            lines.append(f"    diameter = {dia.value * 1000:.1f}mm;")
-        lines.append(f"    material = {pipe.material};")
-        lines.append("}\n")
-
-    if em.connections:
-        for from_id, to_id in em.connections:
-            lines.append(f"connect {from_id} -> {to_id};")
-
-    return "\n".join(lines)
+        block(f"pipe {pipe.entity_id}", [
+            f"start = {pipe.start_id};", f"end = {pipe.end_id};",
+            f"length = {pipe.length:.12g}m;" if pipe.length > 0 else "",
+            "diameter = auto;" if dia.mode == "AUTO" else f"diameter = {dia.value * 1000:.12g}mm;",
+            f"material = {pipe.material};", f"roughness = {pipe.roughness * 1000:.12g}mm;",
+            f"c_factor = {pipe.c_factor:.12g};",
+            f"k_factor = {pipe.k_explicit:.12g};" if pipe.k_explicit else "",
+            f"fittings = [{pipe.fittings.strip('[]{} ')}];" if pipe.fittings.strip("[]{} ") else "",
+            ("via = [" + ", ".join(f"({x:.12g}, {y:.12g}, {z:.12g})" for x, y, z in pipe.via) + "];") if pipe.via else ""])
+    c = em.constraints
+    block("constraint", [f"velocity_min = {c.velocity_min:.12g}m/s;", f"velocity_max = {c.velocity_max:.12g}m/s;",
+                         f"safety_factor_head = {c.safety_factor_head:.12g};",
+                         f"safety_factor_npsh = {c.safety_factor_npsh:.12g};", f"pipe_standard = {c.pipe_standard};"])
+    for from_id, to_id in em.connections:
+        out.append(f"connect {from_id} -> {to_id};")
+    return "\n".join(out)

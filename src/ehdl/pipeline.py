@@ -27,6 +27,15 @@ def analyze(source: str) -> EResult:
     except (OSError, KeyError, ValueError) as e:
         diags.append(DiagnosticItem("ESEM007", "ERROR", f"규칙 세트를 읽지 못했습니다: {e}", SourceSpan()))
         return EResult(status="FAILED", model=model, diagnostics=diags)
+    try:
+        return _solve_judge(model, rules, diags)
+    except Exception as e:                       # 최후 방어선 — analyze 는 예외를 던지지 않는다
+        diags.append(DiagnosticItem("EINT001", "FATAL", f"내부 오류로 해석을 끝내지 못했습니다: {type(e).__name__}: {e}",
+                                    SourceSpan(), suggested_action="입력 값을 확인하세요. 계속되면 입력과 함께 보고해 주세요."))
+        return EResult(status="FAILED", model=model, diagnostics=diags)
+
+
+def _solve_judge(model, rules, diags) -> EResult:
     res = solve(model, rules, diags)
     res.diagnostics = diags
     if any(d.is_blocking for d in diags):

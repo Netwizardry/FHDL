@@ -122,7 +122,7 @@ def fitting_k(name: str) -> float:
 # 위치(선택): elbow_90@2m / valve_gate@1500mm / valve_gate@50% (배관 시작점 기준)
 _COUNT_RE = re.compile(
     r"^\s*(?:(\d+)\s*[\*xX]\s*)?([A-Za-z_]\w*)(?:\s*[\*xX:]\s*(\d+))?"
-    r"\s*(?:@\s*([+-]?[\d.]+)\s*(m|mm|%)?)?\s*$"
+    r"\s*(?:@\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+))\s*(m|mm|%)?)?\s*$"
 )
 
 

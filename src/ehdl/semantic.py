@@ -6,6 +6,8 @@
 """
 from __future__ import annotations
 
+import math
+
 from typing import Dict, List, Optional, Set
 
 from fhdl.core.models import DiagnosticItem
@@ -115,7 +117,9 @@ class Analyzer:
             try:
                 v = float(str(raw))
             except ValueError:
-                self._err("ESEM003", f"'{b.id}' 의 {key} 는 수치여야 합니다: '{raw}'", b)
+                v = float("nan")
+            if not math.isfinite(v):
+                self._err("ESEM003", f"'{b.id}' 의 {key} 는 유한한 수치여야 합니다: '{raw}'", b)
                 return None
             if v <= 0:
                 self._err("ESEM003", f"'{b.id}' 의 {key} 는 0 보다 커야 합니다.", b)
@@ -123,18 +127,28 @@ class Analyzer:
             return v
         if a.kind == "int":
             try:
-                v = int(float(str(raw)))
+                fv = float(str(raw))
             except ValueError:
-                self._err("ESEM003", f"'{b.id}' 의 {key} 는 정수여야 합니다: '{raw}'", b)
+                fv = float("nan")
+            if not math.isfinite(fv) or fv != int(fv) or fv < 1:
+                self._err("ESEM003", f"'{b.id}' 의 {key} 는 1 이상의 정수여야 합니다: '{raw}'", b)
                 return None
+            v = int(fv)
             if a.choices and str(v) not in a.choices:
                 self._err("ESEM005", f"'{b.id}' 의 {key} = {v} 은(는) 허용 값이 아닙니다.", b,
                           f"가능: {', '.join(a.choices)}")
                 return None
             return v
-        val, ukind, msg = parse_quantity(str(raw), a.kind)
+        val, ukind, msg = parse_quantity(str(raw), a.kind, a.unit)
         if val is None:
             self._err("ESEM003", f"'{b.id}' 의 {key}: {msg}", b, "예: 37kW, 380V, 30m, 0.85")
+            return None
+        if not math.isfinite(val):
+            self._err("ESEM003", f"'{b.id}' 의 {key} = {raw} 은(는) 유한한 수가 아닙니다.", b)
+            return None
+        if a.kind != "temperature" and val <= 0:
+            self._err("ESEM003", f"'{b.id}' 의 {key} = {raw} 은(는) 0 보다 커야 합니다.", b,
+                      "모르는 값은 0 이 아니라 쓰지 않습니다(미입력).")
             return None
         if a.kind == "ratio" and not (0 < val <= 1.0 + 1e-9):
             self._err("ESEM003", f"'{b.id}' 의 {key} = {raw} 은(는) 0~1(또는 0~100%) 범위여야 합니다.", b)
@@ -164,6 +178,11 @@ class Analyzer:
                     self._err("ESEM002", f"배선 '{e.id}' 에 {attr} 가 없습니다.", span[e.id])
                 elif ref not in ids:
                     self._err("ESEM002", f"배선 '{e.id}' 의 {attr} = {ref} 은(는) 정의되지 않은 설비입니다.", span[e.id])
+                elif e.type == "cable" and m.nodes[ref].type == "earth":
+                    self._err("ESEM002", f"전력 배선 '{e.id}' 의 {attr} = {ref} 은(는) 접지 노드입니다.", span[e.id],
+                              "접지·본딩 연결은 bond 블록으로 쓰세요.")
+            if e.from_id and e.from_id == e.to_id:
+                self._err("ESEM002", f"배선 '{e.id}' 의 from 과 to 가 같습니다 ({e.from_id}).", span[e.id])
         for s in m.scenarios.values():
             for ref in (s.on or set()) | s.off:
                 if ref != "all" and ref not in ids and ref not in m.groups:

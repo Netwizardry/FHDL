@@ -42,8 +42,9 @@ def tables(res: EResult) -> Dict[str, dict]:
         if c.required is not None:
             B["rows"].append([c.target, name, c.required.text(), c.evidence.formula, c.evidence.scenario])
         if c.kind != "sizing_rationale":
+            shown = c.actual if c.kind == "breaker_cable_coord" else c.installed   # 협조: 실제 = 배선 Iz
             C["rows"].append([c.target, c.title, c.required.text() if c.required else "-",
-                              fmt(c.installed, c.unit) if c.installed is not None else "-",
+                              fmt(shown, c.unit) if shown is not None else "-",
                               f"{c.utilization * 100:.0f}%" if c.utilization is not None else "-",
                               c.status, _rule(c)])
         if c.kind in _CAP_KINDS and c.installed is not None and c.actual is not None:
@@ -157,6 +158,8 @@ def export_report(res: EResult, path: str, project: str = "", baseline: EResult 
         ensure_app()
         from PySide6.QtCore import QMarginsF
         from PySide6.QtGui import QPageLayout, QPageSize, QPdfWriter, QTextDocument
+        from fhdl.drawing.render_qt import check_writable
+        check_writable(path)
         w = QPdfWriter(path)
         w.setPageLayout(QPageLayout(QPageSize(QPageSize.PageSizeId.A4), QPageLayout.Orientation.Landscape,
                                     QMarginsF(12, 12, 12, 12)))
@@ -165,7 +168,8 @@ def export_report(res: EResult, path: str, project: str = "", baseline: EResult 
         d = QTextDocument()
         d.setHtml(doc)
         d.print_(w)
-        return path
+        from fhdl.drawing.render_qt import ensure_written
+        return ensure_written(path)
     raise ValueError(f"지원하지 않는 보고서 형식: {ext} (pdf, html, csv, json)")
 
 

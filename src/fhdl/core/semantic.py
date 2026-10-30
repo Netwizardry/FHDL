@@ -11,7 +11,7 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from .fittings import is_known_fitting, parse_fittings, parse_fitting_placements, sum_fittings_k
-from .language import BLOCK_ATTRS, DIMENSION_UNITS, ENUM_VALUES, VALUE_RANGES
+from .language import BLOCK_ATTRS, DIMENSION_UNITS, ENUM_VALUES, SIGN_RULES, VALUE_RANGES
 from .geometry import pipe_route, polyline_length
 from .materials import material_properties
 from .models import (
@@ -56,7 +56,8 @@ _CONSTRAINT_DEFAULTS = {
     "safety_factor_head": ("양정 안전율", "1.1"), "safety_factor_npsh": ("NPSH 안전율", "1.1"),
 }
 _ENTITY_DEFAULTS = {
-    "tank": {"level_max": ("탱크 최고 수위 level_max", "2 m")},
+    "tank": {"level_max": ("탱크 최고 수위 level_max", "2 m"),
+             "level_min": ("탱크 최저 운전 수위 level_min (NPSHa·요구 양정)", "0 m (탱크 바닥, 보수적)")},
     "pump": {"efficiency": ("펌프 효율", "0.75"), "npshr": ("필요 NPSH npshr", "0.5 m")},
     "terminal": {"required_p": ("말단 요구 압력", "0 (대기 방출)")},
     "pipe": {"material": ("배관 재질", "Steel")},
@@ -261,11 +262,17 @@ class SemanticAnalyzer:
                 elevation=elev,
                 volume=self._as_si(a.get("volume", float("inf"))),
                 level_max=self._as_si(a.get("level_max", (2.0, "m"))),
+                level_min=self._as_si(a.get("level_min", (0.0, "m"))),
                 x=self._as_float(a.get("x", 0.0), ""),
                 y=self._as_float(a.get("y", 0.0), ""),
                 has_xy=("x" in a or "y" in a),
                 span=span,
             )
+
+            tk = em.tanks[cid]
+            if tk.level_min > tk.level_max:
+                self._err("SEM014", f"탱크 '{cid}' 의 최저 수위 level_min({tk.level_min:g} m)이 최고 수위 level_max"
+                          f"({tk.level_max:g} m)보다 높습니다.", span)
 
         elif ctype == "pump":
             elev = self._elev(a)
@@ -371,6 +378,7 @@ class SemanticAnalyzer:
                 wave_velocity=(props or {}).get("wave_velocity_ms") or 1200.0,
                 max_pressure=(props or {}).get("max_pressure_pa") or 2.0e6,
                 manual_k=manual_k,
+                k_explicit=self._as_float(a.get("k_factor", 0.0), ""),
                 via=via,
                 fittings=fittings_spec,
                 span=span,
@@ -407,6 +415,10 @@ class SemanticAnalyzer:
                           f"배관 '{pipe.entity_id}'에 start/end 가 누락됩니다.",
                           pipe.span,
                           "start = NodeA; end = NodeB; 를 추가하거나 connect 체인에 배치하세요.")
+                continue
+            if pipe.start_id == pipe.end_id:
+                self._err("SEM003", f"배관 '{pipe.entity_id}'의 start 와 end 가 같은 노드 '{pipe.start_id}' 입니다.",
+                          pipe.span, "서로 다른 두 노드를 잇도록 고치세요.")
                 continue
             for ref_id, attr in [(pipe.start_id, "start"), (pipe.end_id, "end")]:
                 if ref_id and ref_id not in all_node_ids:
@@ -504,10 +516,12 @@ class SemanticAnalyzer:
                 return 0.0
             if raw.lower() == "inf":
                 return float("inf")
-            import re
-            m = re.match(r'^([+-]?[\d.]+)\s*(.*)$', raw)
+            m = re.match(r'^([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)\s*(.*)$', raw)
             if m:
-                return _to_si(float(m.group(1)), m.group(2))
+                try:
+                    return _to_si(float(m.group(1)), m.group(2))
+                except ValueError:
+                    return 0.0          # 잘못된 수 — _validate 가 이미 SEM012 로 알렸다
         return 0.0
 
     def _as_float(self, raw: Any, _unit: str) -> float:
@@ -558,9 +572,9 @@ class SemanticAnalyzer:
         if isinstance(raw, tuple):
             return float(raw[0]), str(raw[1]).lower().replace(" ", "")
         if isinstance(raw, str):
-            m = re.match(r'^([+-]?\d[\d.]*(?:[eE][+-]?\d+)?)\s*(\S*)$', raw.strip())
+            m = re.match(r'^([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)\s*([^\s\d.]\S*)?$', raw.strip())
             if m:
-                return float(m.group(1)), m.group(2).lower()
+                return float(m.group(1)), (m.group(2) or "").lower()
         return None
 
     def _validate(self, block: str, attrs: Dict[str, Any], span: SourceSpan, owner: str):
@@ -607,6 +621,17 @@ class SemanticAnalyzer:
                           f"(가능: {', '.join(DIMENSION_UNITS[dim])}).", span,
                           "단위를 고치세요. 모르는 단위는 1배로 가정하지 않습니다.")
                 continue
+            if not math.isfinite(val):
+                self._err("SEM014", f"'{owner}' 의 {key} = {raw} 은(는) 유한한 수가 아닙니다.", span)
+                continue
+            sign = SIGN_RULES.get(key)
+            if sign == "pos" and val <= 0 or sign == "nonneg" and val < 0:
+                self._err("SEM014", f"'{owner}' 의 {key} = {raw} 은(는) " + ("0 보다 커야" if sign == "pos" else "음수일 수 없")
+                          + "습니다.", span, "값을 확인하세요.")
+                continue
+            if key == "diameter" and not unit and val > 3.0:
+                self._warn("SEM012", f"'{owner}' 의 diameter = {raw} 를 단위 없이 m 로 읽었습니다({val:g} m).", span,
+                           "mm 단위를 붙이세요 (예: 100mm).")
             rng = VALUE_RANGES.get(key)
             if rng:
                 v = val / 100.0 if unit == "%" else val

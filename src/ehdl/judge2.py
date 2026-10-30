@@ -15,10 +15,10 @@ from .shortcircuit import SCResult
 
 
 def _upstream_breaker(res: EResult, nid: str) -> Optional[str]:
-    """nid 에서 전원 쪽으로 가장 가까운 차단기·누전차단기 (자신 제외)."""
+    """nid 에서 전원 쪽으로 가장 가까운 과전류 차단기 (자신 제외) — 누전 전용(rcd)은 과전류를 끊지 않는다."""
     cur = res.upstream.get(nid)
     while cur is not None:
-        if res.model.nodes[cur].type in ("breaker", "rcd"):
+        if res.model.nodes[cur].type == "breaker":
             return cur
         cur = res.upstream.get(cur)
     return None
@@ -147,6 +147,7 @@ def _sc_min_trip(res: EResult, rules: RuleSet, scmap, bid: str, add):
     if not zone:
         return
     lacking = [z for z in zone if scmap.get(z) is None or scmap[z].ik_min is None]
+    one_ph = any(m.nodes[z].type == "load" and m.nodes[z].params.get("phases") == 1 for z in zone)
     miss = [x for x, ok in ((f"{bid} 정격전류", In), (f"{bid} 순시 특성(curve 또는 instantaneous)", band)) if not ok]
     if lacking:
         miss.append("보호 구간 최소 단락전류: " + ", ".join(lacking[:4]) + " (전원 단락용량·배선 규격)")
@@ -154,8 +155,13 @@ def _sc_min_trip(res: EResult, rules: RuleSet, scmap, bid: str, add):
         c.missing = miss
         add(c)
         return
-    far = min(zone, key=lambda z: scmap[z].ik_min)
-    ik = scmap[far].ik_min
+    def zmin(z):                                   # 단상 부하가 있는 구간은 상-중성 최소가 더 작다
+        s_ = scmap[z]
+        return min(s_.ik_min, s_.ik1_min) if (one_ph and s_.ik1_min) else s_.ik_min
+    far = min(zone, key=zmin)
+    ik = zmin(far)
+    if one_ph:
+        ev.defaults.append("단상 부하 구간 — 상-중성 최소 단락전류(전원 + 배선 왕복, 중성선 = 상도체 굵기 가정) 포함")
     ia = band[1] * In
     c.actual, c.installed = ik, ia
     c.required = Requirement("보호 구간 최소 단락전류", "≥", ia, "A", ref.id)
@@ -248,7 +254,7 @@ def _selectivity(res: EResult, rules: RuleSet, scmap, nid: str, add):
     if up is None:
         return
     d, u = m.nodes[nid], m.nodes[up]
-    in_d, in_u = d.installed.get("rated_current"), u.installed.get("rated_current")
+    in_d, in_u = setting_current(d), setting_current(u)          # 장시간 설정 Ir 기준 (없으면 In)
     ref = rules.ref("TRIP_INSTANTANEOUS")
     s = scmap.get(nid)
     ev = Evidence(inputs=[up, nid], formula="In(상위) > In(하위), 하위 설치 점 Ik''max < 상위 순시 트립 하한 × In(상위)",
@@ -262,7 +268,7 @@ def _selectivity(res: EResult, rules: RuleSet, scmap, nid: str, add):
         c.missing = miss
         add(c)
         return
-    lo = band[0] * in_u
+    lo = band[0] * u.installed["rated_current"]          # 순시 배수는 정격 In 기준
     c.actual, c.installed = s.ik_max, lo
     c.required = Requirement(f"{up} 순시 트립 하한", ">", s.ik_max, "A", ref.id)
     ev.values = {"In 상위(A)": in_u, "In 하위(A)": in_d, f"{up} 순시 하한(A)": round(lo), "Ik''max 하위(A)": round(s.ik_max)}
@@ -283,6 +289,13 @@ def _thermal(res: EResult, rules: RuleSet, scmap, eid: str, add):
     e = m.edges[eid]
     prot = e.from_id if m.nodes[e.from_id].type in ("breaker", "rcd") else _upstream_breaker(res, e.to_id)
     s = scmap.get(e.to_id)
+    if s is not None and m.nodes[e.to_id].type == "transformer" and e.installed.get("size"):
+        # 변압기 1차 케이블 — 변압기 노드 결과는 2차(저압) 값이므로 1차 단자 최소 단락전류를 따로 구한다
+        from .shortcircuit import ik_min_at_end
+        import copy as _copy
+        ik1 = ik_min_at_end(res, rules, eid, e.installed["size"])
+        s = _copy.copy(s)
+        s.ik_min = ik1
     ref = rules.ref("SC_THERMAL")
     kv = rules.values("K_FACTOR")
     S, mat, ins = e.installed.get("size"), e.installed.get("material"), e.installed.get("insulation")
@@ -305,12 +318,32 @@ def _thermal(res: EResult, rules: RuleSet, scmap, eid: str, add):
         c.missing = [f"동작시간 {tn:g}s > 5s — 식 212.5-1 적용 범위 밖"]
         add(c)
         return
-    s_req = s.ik_min * math.sqrt(tn) / k
+    from .engine import loads_under
+    one_ph = any(m.nodes[i].params.get("phases") == 1 for i in loads_under(m, res.children, e.to_id))
+    is_min = min(s.ik_min, s.ik1_min) if (one_ph and s.ik1_min) else s.ik_min
+    if one_ph and s.ik1_min and s.ik1_min < s.ik_min:
+        ev.defaults.append("단상 부하 회로 — 상-중성 최소 단락전류(배선 왕복) 사용")
+    s_req = is_min * math.sqrt(tn) / k
+    # 최대 단락전류에서도: 순시 영역에 들지 않으면 그 전류로도 tn 까지 흐를 수 있다(보수적으로 tn 적용)
+    s_up = scmap.get(e.from_id)
+    band = inst_band(rules, m.nodes[prot]) if prot else None
+    In_p = m.nodes[prot].installed.get("rated_current") if prot else None
+    if s_up is not None and s_up.ik_max and band and In_p:
+        if s_up.ik_max < band[0] * In_p:
+            s_max_req = s_up.ik_max * math.sqrt(tn) / k
+            if s_max_req > s_req:
+                s_req = s_max_req
+                ev.assumptions.append(f"최대 단락전류 {s_up.ik_max:.0f} A 도 순시 하한 {band[0] * In_p:.0f} A 아래 — "
+                                      f"동작시간 tn {tn:g}s 를 적용(보수적)")
+        elif m.nodes[prot].installed.get("let_through_i2t") is None:
+            ev.defaults.append(f"최대 단락전류 {s_up.ik_max:.0f} A 는 순시 영역 — 그 전류의 통과 I²t 는 제조사 값으로 확인")
+    elif s_up is None or not s_up.ik_max:
+        ev.defaults.append("최대 단락전류 미산정 — 최소 단락전류 기준만 검토")
     alpha = rules.values("SC_THERMAL")["alpha"]
     c.actual = s_req
     c.required = Requirement("도체 단면적", "≥", s_req, "mm²", ref.id)
     c.utilization = s_req / S
-    ev.values = {"Is,min(A)": round(s.ik_min), "tn(s)": tn, "k": k, "S 요구(㎟)": round(s_req, 2),
+    ev.values = {"Is,min(A)": round(is_min), "tn(s)": tn, "k": k, "S 요구(㎟)": round(s_req, 2),
                  "S 권장 ×1.25(㎟)": round(s_req * alpha, 2)}
     ev.defaults += s.unverified
     ev.assumptions += s.assumptions

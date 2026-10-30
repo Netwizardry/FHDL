@@ -9,7 +9,9 @@ import os
 import sqlite3
 from typing import List, Optional
 
-DEFAULT_DB = os.path.join(os.getcwd(), "data", "ehdl_kb.db")
+# 설치 폴더 기준(작업 폴더와 무관 — 같은 입력은 어디서 실행해도 같은 결과)
+DEFAULT_DB = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+                          "data", "ehdl_kb.db")
 
 SCHEMA = """
 CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT);
@@ -38,9 +40,15 @@ CREATE VIRTUAL TABLE clauses_fts USING fts5(clause, title, text, content='clause
 class KB:
     def __init__(self, path: str = DEFAULT_DB):
         self.path = path
-        self.con = sqlite3.connect(path) if os.path.exists(path) else None
-        if self.con:
-            self.con.row_factory = sqlite3.Row
+        self.con = None
+        if os.path.exists(path):
+            try:
+                con = sqlite3.connect(path)
+                con.execute("SELECT 1 FROM documents LIMIT 1")      # 손상·다른 파일이면 없는 것으로
+                con.row_factory = sqlite3.Row
+                self.con = con
+            except sqlite3.Error:
+                self.con = None
 
     @property
     def available(self) -> bool:

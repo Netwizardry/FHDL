@@ -99,16 +99,23 @@ def build_sld(res: EResult, project: str = "", collapsed: Optional[Set[str]] = N
     depth: Dict[str, int] = {}
     nxt = [0]
 
-    def place(nid: str, d: int):
-        depth[nid] = d
-        ch = kids.get(nid, [])
-        if not ch:
-            col[nid] = nxt[0]
-            nxt[0] += 1
-            return
-        for c in ch:
-            place(c, d + 1)
-        col[nid] = (col[ch[0]] + col[ch[-1]]) / 2.0
+    def place(root: str, d0: int):
+        """말단을 왼쪽부터 한 칸씩, 부모는 자식들 가운데 — 깊은 계통에서도 재귀 한도에 걸리지 않게 반복으로."""
+        stack = [(root, d0, False)]
+        while stack:
+            nid, d, done = stack.pop()
+            ch = kids.get(nid, [])
+            if done:
+                col[nid] = (col[ch[0]] + col[ch[-1]]) / 2.0
+                continue
+            depth[nid] = d
+            if not ch:
+                col[nid] = nxt[0]
+                nxt[0] += 1
+                continue
+            stack.append((nid, d, True))
+            for c in reversed(ch):
+                stack.append((c, d + 1, False))
 
     for r in [n for n in order if res.upstream.get(n) is None]:
         place(r, 0)

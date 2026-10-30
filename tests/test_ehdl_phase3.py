@@ -37,7 +37,8 @@ def chk(r, cid):
 def _zs(L):
     zb = 380 ** 2 / 1e6
     zt = complex(0.01 * zb, math.sqrt(0.06 ** 2 - 0.01 ** 2) * zb)
-    return zt + complex(0.0225 * L / 2.5 * 2, 0.08e-3 * L)
+    zq = complex(0.1, 1.0) / math.sqrt(1.01) * 22900 ** 2 / 500e6 * (380 / 22900) ** 2   # 고압 전원(2차 환산)
+    return zq + zt + complex(0.0225 * L / 2.5 * 2, 0.08e-3 * L)
 
 
 def test_tn_fault_loop_matches_hand_calculation():

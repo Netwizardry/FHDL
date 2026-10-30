@@ -34,7 +34,7 @@ KIND_ACCEPTS = {
 }
 # 단위 없이 숫자만 쓴 경우의 기본 단위 (속성 종류별)
 DEFAULT_UNIT = {
-    "voltage": "v", "current": "a", "current_ka": "ka", "current_ma": "ma", "power": "kw",
+    "voltage": "v", "current": "a", "current_ka": "ka", "current_ma": "ma", "power": "kw", "power_or_apparent": "kw",
     "apparent": "kva", "length": "m", "area": "mm2", "reactance": "mohm/m", "time": "s",
     "frequency": "hz", "temperature": "c", "ratio": "",
 }
@@ -42,7 +42,7 @@ DEFAULT_UNIT = {
 _NUM = re.compile(r"^\s*([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)\s*([A-Za-z%/²°0-9]*)\s*$")
 
 
-def parse_quantity(raw: str, kind: str) -> Tuple[Optional[float], Optional[str], str]:
+def parse_quantity(raw: str, kind: str, default_unit: str = "") -> Tuple[Optional[float], Optional[str], str]:
     """'37kW' → (37000.0, 'power', '') / 오류 시 (None, None, 메시지).
 
     반환 두 번째 값은 실제 단위 종류(kW/kVA 구분용). ratio 는 '85%' 또는 '0.85'.
@@ -51,9 +51,13 @@ def parse_quantity(raw: str, kind: str) -> Tuple[Optional[float], Optional[str],
     if not m:
         return None, None, f"수치가 아닙니다: '{raw}'"
     val = float(m.group(1))
-    unit = m.group(2).replace("²", "2").replace("°", "deg").lower()
+    orig = m.group(2)
+    # 대소문자로 뜻이 갈리는 표기: 소문자로만 쓰면 관례대로(ma=mA, mva=MVA) 읽되, 반대 접두어를 대문자로 분명히 쓴 경우는 거부
+    if orig in ("MA", "Ms", "mW", "mVA", "mV"):
+        return None, None, f"단위 '{orig}' — 메가(M)/밀리(m)를 확인하세요 (예: 30mA, 500MVA, 10ms)"
+    unit = orig.replace("²", "2").replace("°", "deg").lower()
     if unit == "":
-        unit = DEFAULT_UNIT.get(kind, "")
+        unit = default_unit or DEFAULT_UNIT.get(kind, "")
         if kind == "ratio" or unit == "":
             return val, "ratio" if kind == "ratio" else kind, ""
     if unit not in _UNITS:

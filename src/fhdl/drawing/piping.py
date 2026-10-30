@@ -142,7 +142,7 @@ def build_piping_sheet(result, view: str = "iso", project: str = "", sheet_no: s
         for i in range(len(pts) - 1):
             seg2 = sub(paper[i + 1] + (0,), paper[i] + (0,))
             if math.hypot(seg2[0], seg2[1]) < 0.8:
-                _rise_mark(sheet, paper[i], pts[i], pts[i + 1], view, pid)
+                _rise_mark(sheet, paper[i], pts[i], pts[i + 1], view, pid, c.em.fluid.unit_system)
         # 경유점 꺾임 용접점
         for i, ang in enumerate(bend_angles(pts), start=1):
             if ang <= 0:
@@ -295,17 +295,22 @@ def build_piping_sheet(result, view: str = "iso", project: str = "", sheet_no: s
                        layer="NORTH", anchor="end"))
 
     cut_rows = []
+    short_any = False
     for pid, pts in c.routes.items():
         if len(pts) < 3:
             continue
         for sp in spool_cut_lengths(pts, c.diameter(pid)):
-            cut_rows.append([pid, str(sp.index + 1), f"{sp.length_m * 1000:.0f}", f"{sp.cut_m * 1000:.0f}"])
+            cut_rows.append([pid, str(sp.index + 1), f"{sp.length_m * 1000:.0f}",
+                             f"{sp.cut_m * 1000:.0f}" + (" ⚠" if sp.short else "")])
+            short_any = short_any or sp.short
     notes = [
         "좌표계: x=동(E), y=북(N), z=상. 치수 단위 " + ("mm" if lu == "m" else "ft") + ", EL 은 datum 기준(m).",
         "축척 없음(NTS). 도면은 FHDL DSL 에서 자동 생성된다.",
     ]
     if cut_rows:
         notes.append("절단 길이 = 구간 C-C − 롱 엘보 테이크오프(1.5D·tan(θ/2), KS/JIS).")
+    if short_any:
+        notes.append("⚠ 표시 구간은 C-C 가 양 끝 엘보 테이크오프 합보다 짧음 — 엘보 직결(단관 없음) 또는 경로 조정 필요.")
     if unplaced_fittings:
         notes.append("위치(@)를 지정하지 않은 부속은 배관을 따라 균등 배치(개략 위치).")
     if c.auto_nodes:
@@ -408,7 +413,7 @@ def _dimension(sheet: Sheet, p_a, p_b, b_dir, text: str, ref: str) -> None:
                    anchor="middle", ref=ref))
 
 
-def _rise_mark(sheet: Sheet, at, p_from, p_to, view: str, ref: str) -> None:
+def _rise_mark(sheet: Sheet, at, p_from, p_to, view: str, ref: str, us: str = "METRIC") -> None:
     """평면도/정면도에서 시선 방향 수직·수평관: 원 + 점(올라옴) / 원 + X(내려감)."""
     toward_viewer = {"plan": 2, "elevation": 1}.get(view)
     if toward_viewer is None:
@@ -427,7 +432,7 @@ def _rise_mark(sheet: Sheet, at, p_from, p_to, view: str, ref: str) -> None:
         sheet.add(Line((at[0] - k, at[1] + k), (at[0] + k, at[1] - k), layer="PIPE", width=0.3, ref=ref))
         tag = "DN" if view == "plan" else "▼"
     if view == "plan":
-        sheet.add(Text((at[0] + 2.4, at[1] - 3.6), f"{tag} {abs(p_to[2] - p_from[2]) * 1000:.0f}",
+        sheet.add(Text((at[0] + 2.4, at[1] - 3.6), f"{tag} {_fmt_len(abs(p_to[2] - p_from[2]), us)}",
                        height=2.0, layer="DIM", ref=ref))
 
 
@@ -480,6 +485,10 @@ def bom_rows(c: _Ctx) -> List[List[str]]:
             add(FITTINGS[fp.canon][1], size, fp.count)
     rows = []
     for i, ((desc, size), q) in enumerate(items.items(), 1):
-        qty = f"{q:.1f} m" if desc.startswith("PIPE") else f"{int(q)} EA"
+        if desc.startswith("PIPE"):
+            imp = str(c.em.fluid.unit_system).upper() == "IMPERIAL"
+            qty = f"{q * 3.2808399:.1f} ft" if imp else f"{q:.1f} m"
+        else:
+            qty = f"{int(q)} EA"
         rows.append([str(i), desc, size, qty])
     return rows

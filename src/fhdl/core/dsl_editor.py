@@ -69,8 +69,8 @@ def _set_attr_in_body(body: str, key: str, value: str, indent: str) -> str:
     """본문 내 `key = ...;` 를 교체, 없으면 추가."""
     attr_re = re.compile(rf"(^|\n)([ \t]*){re.escape(key)}\s*=\s*[^;\n]*;",
                          re.MULTILINE)
-    replacement = rf"\g<1>\g<2>{key} = {value};"
-    new_body, n = attr_re.subn(replacement, body)
+    # 값에 \1·\q 같은 글자가 있어도 치환 패턴으로 해석하지 않도록 함수 치환
+    new_body, n = attr_re.subn(lambda m: f"{m.group(1)}{m.group(2)}{key} = {value};", body)
     if n:
         return new_body
 

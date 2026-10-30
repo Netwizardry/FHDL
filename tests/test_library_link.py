@@ -62,7 +62,7 @@ def test_ks_seed_matches_core_and_legacy_seed_is_replaced(tmp_path):
     db._conn.commit()
     db.close()
     db = LibraryDB(str(tmp_path / "old.db"))                 # 다시 열면 이전 시드 교체
-    assert dict(db.get_standard_sizes("KS"))["15A"] == pytest.approx(0.0159)
+    assert dict(db.get_standard_sizes("KS"))["15A"] == pytest.approx(0.0161)            # SPP 21.7 − 2×2.8 mm
     assert [d for _, d in db.get_standard_sizes("KS")] == [s.inner_d_m for s in KS_PIPE_SIZES]
     db.close()
 

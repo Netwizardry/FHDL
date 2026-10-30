@@ -154,7 +154,8 @@ def explain(c: Check, name: str = "") -> None:
         q.append("수도관·가스관·건축 철골 등 인입 도전부를 주접지단자에 본딩했나요? 본딩 도체 굵기는 얼마인가요?")
     elif c.kind == "supply_summary":
         v = c.evidence.values
-        c.explanation = (f"{who}: 설비용량 {v['설비용량 합계(kW)']:g} kW · 최대수요전력 {v['최대수요전력(kW)']:g} kW "
+        le = "≤ " if c.evidence.assumptions and any("P ≤ S" in a for a in c.evidence.assumptions) else ""
+        c.explanation = (f"{who}: 설비용량 {le}{v['설비용량 합계(kW)']:g} kW · 최대수요전력 {le}{v['최대수요전력(kW)']:g} kW "
                          f"({v['최대수요전력(kVA)']:g} kVA, 수용률 {v['수용률(계산)'] * 100:.0f}%)"
                          + "".join(f" · {k} {val:g}" for k, val in v.items() if k.endswith("정격(kVA)"))
                          + (f" · 계약전력 {v['계약전력(kW)']:g} kW" if "계약전력(kW)" in v else "")

@@ -59,7 +59,8 @@ def fault_loop(res: EResult, rules: RuleSet, nid: str):
                 if not sk:
                     missing.append(f"{p}: 전원 단락용량(sc_mva) — 저압 수전 전원 임피던스")
                     return None, notes, missing
-                z += complex(0.1, 1.0) / math.sqrt(1.01) * un * un / sk
+                rx = n.params.get("rx") or 0.1
+                z += complex(rx, 1.0) / math.sqrt(1 + rx * rx) * un * un / sk
                 started = True
             continue
         if n.type == "transformer":
@@ -70,6 +71,14 @@ def fault_loop(res: EResult, rules: RuleSet, nid: str):
             ur = n.installed.get("ur") or 0.0
             zb = sec * sec / srt
             z = complex(ur * zb, math.sqrt(max(uk * uk - ur * ur, 0.0)) * zb)
+            # 고압 전원 임피던스(2차 환산)도 더한다 — 빼면 Zs 가 작아져 비보수적
+            up = res.upstream.get(p)
+            s_up = res.sc.get(up) if up else None
+            prim = n.params.get("primary")
+            if s_up is not None and s_up.z_max is not None and prim:
+                from .shortcircuit import _cfactor
+                cmax_hv = _cfactor(rules, prim, None)[0]           # 단락 임피던스의 전압계수 c 를 빼고 순수 임피던스로
+                z += s_up.z_max / cmax_hv * (sec / prim) ** 2
             notes.append(f"{p}: 지락 루프 변압기 임피던스 ≈ ZT (Dyn, 영상 ≈ 정상 가정)")
             started = True
             continue
@@ -141,7 +150,8 @@ def _fault_protection(res: EResult, rules: RuleSet, nid: str, earthing, add):
         return
     if earthing == "IT" or not v_ll:
         return
-    u0 = v_ll / SQRT3
+    sys_ph = res.levels.get(nid, (None, None, 3))[2]
+    u0 = v_ll if sys_ph == 1 else v_ll / SQRT3              # 단상 계통: 공칭전압이 곧 대지전압
     via = res.via_edge.get(nid)
     final = (m.edges[via].params.get("circuit") or "final") == "final" if via else True
     prot = _upstream_breaker(res, nid)
@@ -180,7 +190,7 @@ def _fault_protection(res: EResult, rules: RuleSet, nid: str, earthing, add):
     ev.assumptions += notes
     if earthing == "TT" and zs is not None:
         zs += complex(m.settings["ra"] + m.settings["rb"], 0.0)
-    if rcd and earthing != "TT":
+    if rcd and earthing not in ("TT", "TN-C"):        # TN-C 는 누전차단기 금지(tnc_rcd) — 과전류 장치로 판정
         ia, dev = sens, rcd
         if ia is None:
             missing.append(f"{rcd} 감도")
@@ -199,10 +209,13 @@ def _fault_protection(res: EResult, rules: RuleSet, nid: str, earthing, add):
     i_f = u0 / abs(zs)
     c.actual, c.installed = i_f, ia
     c.required = Requirement(f"고장전류 U0/Zs (Ia, {dev})", "≥", ia, "A", ref.id)
-    ev.values.update({"Zs(Ω)": round(abs(zs), 4), "If = U0/Zs(A)": round(i_f), "Ia(A)": round(ia, 1),
+    if ia < 1.0:                                       # 누전차단기 IΔn — A 소수 1자리로는 0.0 이 된다
+        c.required = Requirement(f"고장전류 U0/Zs (Ia = IΔn {ia * 1000:g} mA, {dev})", "≥", ia * 1000, "mA", ref.id)
+    ev.values.update({"Zs(Ω)": round(abs(zs), 4), "If = U0/Zs(A)": round(i_f),
+                      ("Ia(mA)" if ia < 1.0 else "Ia(A)"): round(ia * 1000, 1) if ia < 1.0 else round(ia, 1),
                       "Zs 허용 U0/Ia(Ω)": round(u0 / ia, 4)})
     c.estimated = bool(ev.assumptions)
-    if i_f < ia and t_req >= 1.0 and not (rcd and earthing != "TT"):
+    if i_f < ia and t_req >= 1.0 and not (rcd and earthing not in ("TT", "TN-C")):
         c.status = "REVIEW"                # 순시 영역 밖 — 허용 시간(1~5 s) 안 동작은 제조사 시간-전류 곡선으로 확인
         ev.assumptions.append(f"고장전류 {i_f:.0f} A 가 순시 영역({ia:.0f} A) 아래 — 허용 {t_req:g}초 안 동작 여부는 "
                               "제조사 시간-전류 곡선으로 확인")
@@ -288,7 +301,8 @@ def _supply(res: EResult, rules: RuleSet, add):
         return
     rated = res.scenarios["rated"].nodes[src.id]
     sid = res.design_scenario
-    worst = max((res.scenarios[s] for s in res.scenarios if s != "rated"), key=lambda s: s.nodes[src.id].P_max)
+    from .judge import bound_is_exact, judging_scenarios
+    worst = max((res.scenarios[s] for s in judging_scenarios(res)), key=lambda s: s.nodes[src.id].P_max)
     dem = worst.nodes[src.id]
     ev = Evidence(inputs=[src.id], formula="수용률 = 최대수요전력 ÷ 설비용량 (검사·점검 기준 230.4.3)",
                   rule=rules.ref("TX_CAPACITY"), scenario=worst.scenario.id,
@@ -318,7 +332,11 @@ def _supply(res: EResult, rules: RuleSet, add):
         c.required = Requirement("계약전력", "≥", dem.P_max, "W", cref.id)
         c.utilization = dem.P_max / contract
         ev.values["계약전력(kW)"] = contract / 1000
-        c.status = "FAIL" if dem.P_max > contract else ("PASS" if (cref.verified and not ev.assumptions) else "REVIEW")
+        if dem.P_max > contract and not bound_is_exact(dem):
+            c.status = "REVIEW"
+            ev.assumptions.append("유효전력 상한(P ≤ S)이 계약전력을 넘음 — 역률을 입력하면 확정 판정")
+        else:
+            c.status = "FAIL" if dem.P_max > contract else ("PASS" if (cref.verified and not ev.assumptions) else "REVIEW")
     elif panels and tx and ev.values["식 230-6 변압기 용량(kVA)"] * 1000 > tx[0].installed["rated"]:
         c.status = "FAIL"
     add(c)

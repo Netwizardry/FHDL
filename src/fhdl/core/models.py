@@ -84,20 +84,28 @@ class FluidConfig:
     friction_model: FrictionModel = "DW"
 
     @property
+    def _T(self) -> float:
+        """물성식 적용 범위 0~100 °C 로 묶은 온도 (범위 밖은 SEM006 경고)."""
+        return min(max(self.temp, 0.0), 100.0)
+
+    @property
     def density(self) -> float:
-        T = self.temp
-        rho = 999.84 + 0.0678 * T - 0.009 * T * T
-        return max(rho, 1.0)
+        """물 밀도 (kg/m³) — Thiesen 식: 20 °C 998.2, 60 °C 983.2, 100 °C 958.4."""
+        T = self._T
+        return 1000.0 * (1.0 - (T + 288.9414) * (T - 3.9863) ** 2 / (508929.2 * (T + 68.12963)))
+
+    @property
+    def dynamic_viscosity(self) -> float:
+        """물 점성계수 (Pa·s) — Vogel 식 μ = 2.414e-5·10^(247.8/(T_K − 140)): 20 °C 1.002e-3."""
+        return 2.414e-5 * 10 ** (247.8 / (self._T + 273.15 - 140.0))
 
     @property
     def kinematic_viscosity(self) -> float:
-        T = self.temp
-        return 1.792e-6 / (1 + 0.0337 * T + 0.000221 * T * T)
+        return self.dynamic_viscosity / self.density
 
     @property
     def vapor_pressure(self) -> float:
-        import math
-        T = self.temp
+        T = self._T
         log_pvap_mmhg = 8.07131 - 1730.63 / (233.426 + T)
         pvap_mmhg = 10 ** log_pvap_mmhg
         return pvap_mmhg * 133.322
@@ -105,8 +113,8 @@ class FluidConfig:
     @staticmethod
     def atm_pressure_at(abs_altitude_m: float) -> float:
         """절대 해발고도(m)에서의 대기압(Pa). 표준 기압식(ISA)."""
-        h = abs_altitude_m
-        return 101325.0 * (1 - 2.25577e-5 * h) ** 5.25588
+        h = min(abs_altitude_m, 40000.0)             # 식의 정의역(44 km 초과는 음수 밑) — 범위 밖은 SEM005 경고
+        return 101325.0 * max(1 - 2.25577e-5 * h, 0.0) ** 5.25588
 
     @property
     def atm_pressure(self) -> float:
@@ -119,7 +127,8 @@ class TankEntity:
     entity_id: str = ""
     elevation: float = 0.0     # m
     volume: float = float("inf")
-    level_max: float = 2.0     # m
+    level_max: float = 2.0     # m  (최고 수위 — 운전 수두)
+    level_min: float = 0.0     # m  (최저 운전 수위 — NPSHa·요구 양정, 미입력 0 = 탱크 바닥, 보수적)
     x: float = 0.0
     y: float = 0.0
     has_xy: bool = False        # x/y 를 DSL 에 명시했는가 (미지정이면 0 은 가짜 좌표)
@@ -159,6 +168,7 @@ class PipeEntity:
     max_pressure: float = 2.0e6      # Pa 허용 압력 (재질 물성)
     manual_k: float = 0.0
     auto_k: float = 0.0
+    k_explicit: float = 0.0          # DSL 에 직접 쓴 k_factor (manual_k = 이것 + fittings 합)
     via: List[Tuple[float, float, float]] = field(default_factory=list)  # 경유점 (x, y, z) m
     fittings: str = ""          # 부속 명세 원문 (도면 기호 배치용, K 는 manual_k 에 합산됨)
     span: SourceSpan = field(default_factory=SourceSpan)

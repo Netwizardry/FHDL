@@ -109,6 +109,8 @@ def export_calc_report(result: AnalysisResult, path: str, source: str = "", proj
     ensure_app()
     from PySide6.QtCore import QMarginsF
     from PySide6.QtGui import QPageLayout, QPageSize, QPdfWriter, QTextDocument
+    from ..drawing.render_qt import check_writable
+    check_writable(path)
     w = QPdfWriter(path)
     w.setPageLayout(QPageLayout(QPageSize(QPageSize.PageSizeId.A4), QPageLayout.Orientation.Landscape,
                                 QMarginsF(12, 12, 12, 12)))
@@ -117,4 +119,5 @@ def export_calc_report(result: AnalysisResult, path: str, source: str = "", proj
     d = QTextDocument()
     d.setHtml(doc)
     d.print_(w)
-    return path
+    from ..drawing.render_qt import ensure_written
+    return ensure_written(path)

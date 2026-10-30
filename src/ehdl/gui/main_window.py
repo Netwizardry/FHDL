@@ -153,9 +153,22 @@ class EHDLMainWindow(QMainWindow):
         return Path(self.path).parent.name if self.path else "untitled"
 
     def _on_edited(self):
-        self._dirty = True
+        src = self.editor.get_source()
+        if src == self._analyzed:                     # 프로그램이 넣은 소스(열기·새로·가져오기)의 지연 신호 — 편집 아님
+            return
+        self._dirty = src != self._saved_src
         self._update_title()
         self._run()
+
+    def _reset_session(self):
+        """다른 계통으로 바꿀 때 — 이전 계통의 결과·변경 영향·선택이 넘어오지 않게."""
+        self.result = None
+        self.changes = []
+        self._prev_result = None
+        self._baseline_src = None
+        self.results.show_impact([])
+        self.graph.collapsed.clear()
+        self.graph._selected = None
 
     def _update_title(self):
         name = Path(self.path).name if self.path else "untitled.ehd"
@@ -175,6 +188,11 @@ class EHDLMainWindow(QMainWindow):
             self.console.log(f"해석 실패 — 오류 {len(r.errors)}건 (진단 패널)", "ERROR")
             return
         self.results.update_result(r)
+        if r.model is not None:                       # 지운 설비가 접힘·선택 상태로 남지 않게
+            self.graph.collapsed &= set(r.model.nodes)
+            if getattr(self.graph, "_selected", None) and self.graph._selected not in r.model.nodes \
+                    and self.graph._selected not in r.model.edges:
+                self.graph._selected = None
         self.graph.update_from_result(r, self._project())
         from ..impact import diff, summary
         if prev is not None and self._baseline_src != src:
@@ -285,11 +303,15 @@ class EHDLMainWindow(QMainWindow):
             self._set_source(res.new_source)
 
     def _abs(self, p: str) -> str:
-        return p if os.path.isabs(p) or not self.path else os.path.join(os.path.dirname(self.path), p)
+        if os.path.isabs(p):
+            return p
+        base = os.path.dirname(self.path) if self.path else os.path.expanduser("~")   # 저장 전 계통은 홈 폴더 기준
+        return os.path.join(base, p)
 
     # --- 파일 · 보고서 -------------------------------------------------------
     def _new(self):
         self.path = None
+        self._reset_session()
         self.editor.set_source(SAMPLE, reset_undo=True)
         self._dirty = False
         self._update_title()
@@ -302,15 +324,27 @@ class EHDLMainWindow(QMainWindow):
             self.open_file(p)
 
     def open_file(self, p: str):
-        self.path = p
-        self.result = None                  # 다른 파일 — 변경 영향 기준을 새로
-        self.editor.set_source(Path(p).read_text(encoding="utf-8"), reset_undo=True)
+        try:
+            text = Path(p).read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            try:
+                text = Path(p).read_text(encoding="cp949")       # 한글 Windows 메모장 저장본
+                self.console.log(f"{Path(p).name}: UTF-8 이 아니라 CP949 로 읽었습니다(저장하면 UTF-8).", "WARNING")
+            except (UnicodeDecodeError, OSError) as e:
+                self.console.log(f"열기 실패: {p} — {e}", "ERROR")
+                return False
+        except OSError as e:
+            self.console.log(f"열기 실패: {p} — {e}", "ERROR")
+            return False
+        self.path = p                       # 읽기에 성공한 뒤에만 — 실패한 파일을 저장으로 덮어쓰지 않게
+        self._reset_session()
+        self.editor.set_source(text, reset_undo=True)
         self._dirty = False
         self._update_title()
-        self.graph.collapsed.clear()
         self._run()
         self._mark_saved()
         self.console.log(f"열기: {p}" + (f" — 변경 이력 {len(self.history)}건" if self.history else ""), "INFO")
+        return True
 
     def _mark_saved(self):
         """저장/열기 시점 — 다음 저장의 변경 이력 기준."""
@@ -370,7 +404,7 @@ class EHDLMainWindow(QMainWindow):
         finally:
             QApplication.restoreOverrideCursor()
         self.path = None
-        self.result = None
+        self._reset_session()
         self.editor.set_source(res.source, reset_undo=True)
         self._dirty = True
         self._update_title()

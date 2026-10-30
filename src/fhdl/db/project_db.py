@@ -99,7 +99,27 @@ class ProjectDB:
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA synchronous=NORMAL")
         self._conn.executescript(_SCHEMA)
+        self._migrate()
         self._conn.commit()
+
+    _CACHE_TABLES = ("nodes_result", "pipes_result", "system_summary", "diagnostics")
+
+    def _migrate(self) -> None:
+        """이전 버전 state.db — 결과 캐시 표의 열이 다르면 지우고 다시 만든다(캐시는 재해석으로 복구).
+        project_meta 의 analyzed_checksum 도 지워 옛 캐시를 유효로 보지 않는다."""
+        tmp = sqlite3.connect(":memory:")
+        tmp.executescript(_SCHEMA)
+        stale = False
+        for t in self._CACHE_TABLES:
+            want = [r[1] for r in tmp.execute(f"PRAGMA table_info({t})")]
+            have = [r[1] for r in self._conn.execute(f"PRAGMA table_info({t})")]
+            if set(want) - set(have):
+                self._conn.execute(f"DROP TABLE IF EXISTS {t}")
+                stale = True
+        tmp.close()
+        if stale:
+            self._conn.executescript(_SCHEMA)
+            self._conn.execute("DELETE FROM project_meta WHERE key='analyzed_checksum'")
 
     # ------------------------------------------------------------------
     # 결과 저장
@@ -107,7 +127,8 @@ class ProjectDB:
 
     def save_analysis_result(self, result: AnalysisResult, run_id: str = "") -> str:
         if not run_id:
-            run_id = datetime.now().strftime("run_%Y%m%d_%H%M%S")
+            import uuid
+            run_id = datetime.now().strftime("run_%Y%m%d_%H%M%S_") + uuid.uuid4().hex[:8]
 
         self._set_journal_dirty()
 
@@ -150,7 +171,12 @@ class ProjectDB:
                  s.recommended_pump_head, s.recommended_tank_volume, result.status),
             )
 
-            # 진단
+            # 진단 — 이번 실행 것만 남긴다 (복원 시 이전 실행 진단이 섞이지 않게)
+            self._conn.execute("DELETE FROM diagnostics")
+            self._conn.execute("DELETE FROM system_summary WHERE run_id != ?", (run_id,))
+            self._conn.execute(
+                "INSERT OR REPLACE INTO project_meta (key, value) VALUES ('convergence', ?)",
+                (json.dumps({"converged": s.converged, "iterations": s.solve_iterations, "residual": s.residual}),))
             for d in result.diagnostics:
                 self._conn.execute(
                     """INSERT INTO diagnostics (run_id, code, severity, message, related_id, source_line, source_col)
@@ -314,6 +340,13 @@ class ProjectDB:
                 summ.worst_path = json.loads(srow.get("worst_path") or "[]")
             except (json.JSONDecodeError, TypeError):
                 summ.worst_path = []
+            try:
+                conv = json.loads(self.get_meta("convergence") or "{}")
+            except (json.JSONDecodeError, TypeError):
+                conv = {}
+            summ.converged = bool(conv.get("converged", False))
+            summ.solve_iterations = int(conv.get("iterations", 0))
+            summ.residual = float(conv.get("residual", 0.0))
             result.summary = summ
             result.status = srow.get("status", "OK")
 

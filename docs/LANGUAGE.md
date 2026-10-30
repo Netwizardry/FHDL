@@ -38,7 +38,7 @@ connect A -> B -> C;           // 노드/배관 연결 (방향성)
 | `friction_model` | DW(Darcy-Weisbach) \| HW(Hazen-Williams) | `DW` |
 
 ### tank
-`z`, `volume`(생략 시 무한), `level_max`(최고 수위), `x`, `y`.
+`z`, `volume`(생략 시 무한), `level_max`(최고 수위 — 운전 수두) · `level_min`(최저 운전 수위 — NPSHa·요구 양정, 기본 0 = 탱크 바닥), `x`, `y`.
 
 ### pump
 `z`, `flow`/`head`(MANUAL 지정 시 실제 양정 주입, 생략 시 auto=사양 선정 대상), `efficiency`, `npshr`, `x`, `y`.

@@ -69,6 +69,14 @@ CREATE TABLE IF NOT EXISTS fluid_properties (
 from ..core.pipe_sizes import KS_PIPE_SIZES as _CORE_KS
 
 _KS_SIZES = [(f"{s.nominal_a}A", s.inner_d_m) for s in _CORE_KS]
+from ..core.pipe_sizes import KS_OUTER_WALL as _KS_OW
+
+# 이전 버전 내장 KS 표(일부 관경 내경 오류 — 350~500A 는 두께 1.5~2.7 mm 에 해당). 이 값 그대로면 정본으로 교체.
+_LEGACY_KS_V2 = {
+    "10A": 0.0127, "15A": 0.0159, "20A": 0.0211, "25A": 0.0267, "32A": 0.0352, "40A": 0.0422, "50A": 0.0528,
+    "65A": 0.0686, "80A": 0.0825, "100A": 0.1023, "125A": 0.1263, "150A": 0.1503, "200A": 0.2027,
+    "250A": 0.2527, "300A": 0.3027, "350A": 0.3527, "400A": 0.4027, "500A": 0.5027,
+}
 
 # 이전 시드(호칭과 내경이 한 칸 어긋남 — 15A 에 10A 내경). 이 값 그대로면 _seed_data 가 교체한다.
 _LEGACY_KS = {
@@ -136,7 +144,7 @@ class LibraryDB:
         # 관경 (표준별로 없을 때만). 이전의 어긋난 KS 시드는 정본으로 교체.
         ks = {r[0]: r[1] for r in cur.execute(
             "SELECT nominal_size, inner_diameter FROM pipe_sizes WHERE standard='KS'").fetchall()}
-        if ks and ks == _LEGACY_KS:
+        if ks and (ks == _LEGACY_KS or ks == _LEGACY_KS_V2):
             cur.execute("DELETE FROM pipe_sizes WHERE standard='KS'")
             ks = {}
         if not ks:
@@ -144,6 +152,10 @@ class LibraryDB:
                 "INSERT OR IGNORE INTO pipe_sizes(standard,nominal_size,inner_diameter) VALUES(?,?,?)",
                 [("KS", nm, d) for nm, d in _KS_SIZES],
             )
+            for nm, _ in _KS_SIZES:
+                od, t = _KS_OW[int(nm[:-1])]
+                cur.execute("UPDATE pipe_sizes SET outer_diameter=?, wall_thickness=? WHERE standard='KS' AND nominal_size=?",
+                            (od / 1000.0, t / 1000.0, nm))
         for std, rows in _OTHER_STANDARDS.items():
             if cur.execute("SELECT COUNT(*) FROM pipe_sizes WHERE standard=?", (std,)).fetchone()[0] == 0:
                 cur.executemany(
@@ -170,11 +182,9 @@ class LibraryDB:
             import math
             rows = []
             for T in range(0, 101, 10):
-                rho = 999.84 + 0.0678 * T - 0.009 * T * T
-                nu = 1.792e-6 / (1 + 0.0337 * T + 0.000221 * T * T)
-                visc = nu * rho
-                log_pv = 8.07131 - 1730.63 / (233.426 + T)
-                pv = (10 ** log_pv) * 133.322
+                from ..core.models import FluidConfig       # 물성식 단일 진실원
+                fc = FluidConfig(temp=float(T))
+                rho, visc, pv = fc.density, fc.dynamic_viscosity, fc.vapor_pressure
                 rows.append(("water", float(T), rho, visc, pv))
             cur.executemany(
                 "INSERT OR IGNORE INTO fluid_properties"
@@ -208,7 +218,7 @@ class LibraryDB:
         from ..core.fittings import _canonical
         key = _canonical(fitting_type) or fitting_type
         row = self._conn.execute(
-            "SELECT k_factor FROM fitting_kfactors WHERE fitting_type=? AND (nominal_size=? OR nominal_size='all') ORDER BY nominal_size DESC LIMIT 1",
+            "SELECT k_factor FROM fitting_kfactors WHERE fitting_type=? AND (nominal_size=? OR nominal_size='all') ORDER BY (nominal_size='all') LIMIT 1",
             (key, nominal_size),
         ).fetchone()
         return row["k_factor"] if row else 1.0
@@ -219,7 +229,7 @@ class LibraryDB:
         key = _canonical(fitting_type) or fitting_type
         row = self._conn.execute(
             "SELECT k_factor FROM fitting_kfactors WHERE fitting_type=? AND (nominal_size=? OR nominal_size='all') "
-            "ORDER BY nominal_size DESC LIMIT 1", (key, nominal_size)).fetchone()
+            "ORDER BY (nominal_size='all') LIMIT 1", (key, nominal_size)).fetchone()
         return row["k_factor"] if row else None
 
     def get_pump_curve_points(self, curve_id: str) -> List[Tuple[float, float, float]]:
@@ -258,8 +268,8 @@ class LibraryDB:
                VALUES(?,?,?,?,?)
                ON CONFLICT(standard,nominal_size) DO UPDATE SET
                  inner_diameter=excluded.inner_diameter,
-                 outer_diameter=excluded.outer_diameter,
-                 wall_thickness=excluded.wall_thickness""",
+                 outer_diameter=COALESCE(excluded.outer_diameter, pipe_sizes.outer_diameter),
+                 wall_thickness=COALESCE(excluded.wall_thickness, pipe_sizes.wall_thickness)""",
             (standard, nominal_size, inner_diameter, outer_diameter, wall_thickness),
         )
         self._conn.commit()
@@ -302,6 +312,8 @@ class LibraryDB:
     def upsert_fitting(self, fitting_type: str, k_factor: float,
                        nominal_size: str = "all", description: str = "") -> None:
         # (fitting_type, nominal_size) 유일성 보장 (테이블엔 UNIQUE 없으므로 수동 갱신)
+        from ..core.fittings import _canonical
+        fitting_type = _canonical(fitting_type) or fitting_type     # 별칭(ELBOW90) 도 정본 키로 저장 — 조회와 일치
         row = self._conn.execute(
             "SELECT id FROM fitting_kfactors WHERE fitting_type=? AND nominal_size=?",
             (fitting_type, nominal_size)).fetchone()
@@ -316,6 +328,8 @@ class LibraryDB:
         self._conn.commit()
 
     def delete_fitting(self, fitting_type: str, nominal_size: str = "all") -> int:
+        from ..core.fittings import _canonical
+        fitting_type = _canonical(fitting_type) or fitting_type
         cur = self._conn.execute(
             "DELETE FROM fitting_kfactors WHERE fitting_type=? AND nominal_size=?",
             (fitting_type, nominal_size))

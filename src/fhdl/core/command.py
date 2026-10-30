@@ -8,6 +8,7 @@ GUI 는 new_source 로 에디터를 갱신하고 action(run/save/clear) 을 처�
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import List, Optional
 
@@ -88,6 +89,10 @@ def execute_command(source: str, command: str, entity_map=None) -> CommandResult
         ntype, nid = pos[0].lower(), pos[1]
         if ntype not in COMPONENT_TYPES:
             return err(f"알 수 없는 타입 '{ntype}' (가능: {', '.join(COMPONENT_TYPES)})")
+        if not re.fullmatch(r"\w+", nid):
+            return err(f"ID '{nid}' 에는 영문·숫자·_ 만 쓸 수 있습니다.")
+        if re.search(rf"\b(?:{'|'.join(COMPONENT_TYPES)})\s+{re.escape(nid)}\s*\{{", source):
+            return err(f"'{nid}' 는 이미 있습니다(노드·배관 ID 는 서로 달라야 합니다).")
         if ntype == "pipe":
             start, end = kv.pop("start", ""), kv.pop("end", "")
             if not start or not end:
@@ -104,8 +109,13 @@ def execute_command(source: str, command: str, entity_map=None) -> CommandResult
     if verb == "set":
         if not pos or not kv:
             return err("사용법: set <id> key=value [...]")
+        bad = [k for k, v in kv.items() if any(c in v for c in ";{}") or not re.fullmatch(r"\w+", k)]
+        if bad:
+            return err(f"값에 ; {{ }} 를 쓸 수 없습니다: {', '.join(bad)}")
         nid = pos[0]
-        if entity_map is not None and nid in getattr(entity_map, "pipes", {}):
+        is_pipe = (entity_map is not None and nid in getattr(entity_map, "pipes", {})) or \
+            re.search(rf"\bpipe\s+{re.escape(nid)}\s*\{{", source) is not None
+        if is_pipe:
             new = set_pipe_attributes(source, nid, kv)
         else:
             new = set_node_attributes(source, nid, kv)
@@ -117,8 +127,11 @@ def execute_command(source: str, command: str, entity_map=None) -> CommandResult
         if not pos:
             return err("사용법: del <id>")
         nid = pos[0]
-        if entity_map is not None and nid in getattr(entity_map, "pipes", {}):
+        if (entity_map is not None and nid in getattr(entity_map, "pipes", {})) or \
+                re.search(rf"\bpipe\s+{re.escape(nid)}\s*\{{", source):
             new = remove_pipe(source, nid)
+            if new == source:
+                return err(f"배관 '{nid}' 를 찾지 못했습니다.")
             return CommandResult(new, [f"배관 '{nid}' 삭제"], level="WARNING")
         new = remove_node(source, nid)
         if new == source:
@@ -135,6 +148,8 @@ def execute_command(source: str, command: str, entity_map=None) -> CommandResult
         if len(pos) < 2:
             return err("사용법: unlink <A> <B>")
         new = remove_link(source, pos[0], pos[1])
+        if new == source:
+            return err(f"{pos[0]} → {pos[1]} 연결을 찾지 못했습니다.")
         return CommandResult(new, [f"연결 삭제: {pos[0]} → {pos[1]}"], level="WARNING")
 
     if verb in ("constraint", "constr"):

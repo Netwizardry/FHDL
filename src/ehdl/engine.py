@@ -190,8 +190,13 @@ def phase_share(n, S: complex, sys_phases: int) -> Tuple[Optional[Tuple[complex,
     if not idx:
         return None, True
     parts = [0j, 0j, 0j]
-    for i in idx:
-        parts[i] += S / len(idx)
+    if len(idx) == 1:
+        parts[idx[0]] += S
+    else:
+        # 선간 부하: 두 선 전류 = S/V_LL → 상별 피상전력 (S/√3)∠∓30° (합은 S)
+        rot = complex(math.cos(math.pi / 6), math.sin(math.pi / 6))
+        parts[idx[0]] += S / SQRT3 / rot
+        parts[idx[1]] += S / SQRT3 * rot
     return tuple(parts), False
 
 
@@ -220,6 +225,26 @@ def scenarios(m: SystemModel, load_S: Dict[str, Optional[complex]], diags, child
         out.append(Scenario("max_demand", chosen, builtin=True,
                             description="동시운전 그룹 제약 내 최대 부하 (" + ", ".join(notes) + ")" if notes
                             else "동시운전 그룹 제약 내 최대 부하"))
+        # 계통 전체에서 큰 것부터 고르면 다른 가지의 작은 부하는 어떤 시나리오에서도 운전하지 않는다 —
+        # 가지(설비)마다 그 아래 그룹 부하 중 큰 것부터 max_on 대를 운전하는 조합도 판정한다 (중복 제거)
+        limited = [g for g in m.groups.values() if g.max_on is not None]
+        seen = {frozenset(chosen)}
+        for nid in m.nodes:
+            if m.nodes[nid].type not in ("switchboard", "panel", "bus", "breaker", "rcd", "transformer"):
+                continue
+            below = loads_under(m, children, nid)
+            sel = set(normal) - {i for i in normal for g in limited if m.nodes[i].params.get("group") == g.id}
+            hit = False
+            for g in limited:
+                mem = [i for i in normal if m.nodes[i].params.get("group") == g.id and i in below]
+                ranked = sorted(mem, key=lambda i: (-(abs(load_S[i]) if load_S.get(i) else 0.0), i))
+                sel |= set(ranked[: g.max_on])
+                hit = hit or bool(mem)
+            fs = frozenset(sel)
+            if hit and fs not in seen:
+                seen.add(fs)
+                out.append(Scenario(f"max_demand_{nid}", sel, builtin=False,
+                                    description=f"동시운전 제약 내 최대 — {nid} 아래 그룹 부하 기준"))
     new = {i for i in loads if _is_new(m, i)}
     if new:
         out.append(Scenario("existing", normal - new, builtin=True,
@@ -234,7 +259,9 @@ def scenarios(m: SystemModel, load_S: Dict[str, Optional[complex]], diags, child
             elif ref in m.nodes:
                 on |= loads_under(m, children, ref)
         for ref in s.off:
-            if ref in m.groups:
+            if ref == "all":
+                on.clear()
+            elif ref in m.groups:
                 on -= {i for i in loads if m.nodes[i].params.get("group") == ref}
             elif ref in m.nodes:
                 on -= loads_under(m, children, ref)
@@ -287,6 +314,7 @@ def aggregate(m: SystemModel, sc: Scenario, order, upstream, via, children, leve
         r = NodeResult(nid, voltage=v_in, phases=sys_ph)
         ph = [0j, 0j, 0j]
         ex = [0.0, 0.0, 0.0]
+        un_S, un_max = 0.0, 0.0                       # 접속 상 미지정 단상 부하 |S| 합 · 최대
         unassigned = False
         contrib: Dict[str, float] = {}
         if n.type == "load" and nid in (sc.on or set()):
@@ -306,6 +334,8 @@ def aggregate(m: SystemModel, sc: Scenario, order, upstream, via, children, leve
                 if share:
                     ph = list(share)
                 contrib[nid] = abs(S)
+            if unassigned and S is not None:
+                un_S = un_max = abs(S)
         for c in children[nid]:
             cr = res.nodes[c]
             r.P += cr.P
@@ -314,6 +344,8 @@ def aggregate(m: SystemModel, sc: Scenario, order, upstream, via, children, leve
             r.pf_unknown += cr.pf_unknown
             for i in range(3):
                 ex[i] += cr.phase_extra[i]
+            un_S += cr.unassigned_S
+            un_max = max(un_max, cr.unassigned_max)
             r.incomplete += cr.incomplete
             unassigned = unassigned or cr.balanced_estimate
             for i in range(3):
@@ -322,6 +354,7 @@ def aggregate(m: SystemModel, sc: Scenario, order, upstream, via, children, leve
                 contrib[lid] = contrib.get(lid, 0.0) + s
         r.phase_S = tuple(ph)
         r.phase_extra = tuple(ex)
+        r.unassigned_S, r.unassigned_max = un_S, un_max
         r.contributors = sorted(contrib.items(), key=lambda kv: (-kv[1], kv[0]))
         r.balanced_estimate = unassigned
         v = v_in if n.type != "source" else v_out
@@ -329,13 +362,16 @@ def aggregate(m: SystemModel, sc: Scenario, order, upstream, via, children, leve
             if sys_ph == 1:
                 r.current = r.S / v
                 r.phase_current = (r.current, 0.0, 0.0)
-            elif unassigned:
-                r.current = r.S / (SQRT3 * v)
             else:
                 vln = v / SQRT3
                 pc = tuple((abs(s) + e) / vln for s, e in zip(ph, ex))
                 r.phase_current = pc
                 r.current = max(pc)
+                if un_S > 0:
+                    # 상 미지정 단상 부하: 상한 = 모두 가장 큰 상에 (보수적), 하한 = 고르게 나눈 값·가장 큰 단일 부하
+                    tot = sum(abs(s) + e for s, e in zip(ph, ex)) + un_S
+                    r.current_lb = max(r.current, un_max / vln, tot / 3 / vln)
+                    r.current = r.current + un_S / vln
         res.nodes[nid] = r
     for nid in order:                                  # 전원 → 말단: 누적 전압강하
         r = res.nodes[nid]
@@ -366,7 +402,7 @@ def circuit_unbalance_pct(r: NodeResult) -> Optional[float]:
     """회로 불평형률 = (상별 |S| 최대 − 최소) ÷ (합 ÷ 3) × 100. 상 배분을 모르면 None."""
     if r.balanced_estimate:
         return None
-    mags = [abs(s) for s in r.phase_S]
+    mags = [abs(s) + e for s, e in zip(r.phase_S, r.phase_extra)]   # 역률 미입력 부하 포함
     tot = sum(mags)
     return (max(mags) - min(mags)) / (tot / 3.0) * 100.0 if tot > 0 else 0.0
 

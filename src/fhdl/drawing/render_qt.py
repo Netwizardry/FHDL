@@ -75,6 +75,23 @@ def paint_sheet(painter, sheet: Sheet, px_per_mm: float, highlight: Optional[set
             painter.restore()
 
 
+def check_writable(path: str) -> None:
+    """Qt 저장기는 실패해도 예외를 내지 않는다 — 폴더가 없거나 쓸 수 없으면 미리 OSError."""
+    import os
+    d = os.path.dirname(os.path.abspath(path))
+    if not os.path.isdir(d):
+        raise OSError(f"폴더가 없습니다: {d}")
+    if not os.access(d, os.W_OK):
+        raise OSError(f"쓸 수 없는 폴더입니다: {d}")
+
+
+def ensure_written(path: str) -> str:
+    import os
+    if not os.path.exists(path) or os.path.getsize(path) == 0:
+        raise OSError(f"파일을 쓰지 못했습니다: {path}")
+    return path
+
+
 def save_png(sheet: Sheet, path: str, px_per_mm: float = 6.0) -> str:
     ensure_app()
     from PySide6.QtGui import QImage, QPainter
@@ -82,7 +99,9 @@ def save_png(sheet: Sheet, path: str, px_per_mm: float = 6.0) -> str:
     painter = QPainter(img)
     paint_sheet(painter, sheet, px_per_mm)
     painter.end()
-    img.save(path)
+    check_writable(path)
+    if not img.save(path):
+        raise OSError(f"PNG 를 쓰지 못했습니다: {path}")
     return path
 
 
@@ -94,6 +113,7 @@ def save_pdf(sheets, path: str) -> str:
     if isinstance(sheets, Sheet):
         sheets = [sheets]
     first = sheets[0]
+    check_writable(path)
     writer = QPdfWriter(path)
     writer.setResolution(300)
     size = QPageSize(QSizeF(first.width, first.height), QPageSize.Unit.Millimeter, "FHDL")
@@ -101,10 +121,12 @@ def save_pdf(sheets, path: str) -> str:
     writer.setTitle(first.title)
     writer.setCreator("FHDL")
     painter = QPainter(writer)
+    if not painter.isActive():
+        raise OSError(f"PDF 를 쓰지 못했습니다: {path}")
     px_per_mm = 300 / 25.4
     for i, sh in enumerate(sheets):
         if i:
             writer.newPage()
         paint_sheet(painter, sh, px_per_mm)
     painter.end()
-    return path
+    return ensure_written(path)

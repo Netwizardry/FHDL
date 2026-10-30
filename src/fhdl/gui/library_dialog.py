@@ -78,12 +78,20 @@ class _CrudTab(QWidget):
             text = item.text().strip() if item else ""
             if is_float:
                 try:
-                    d[field] = float(text) if text else 0.0
+                    v = float(text.replace(",", ".")) if text else None
                 except ValueError:
-                    d[field] = 0.0
+                    v = float("nan")
+                if v is not None and (v != v or v < 0 or v == float("inf")):
+                    raise ValueError(f"{r + 1}행 '{self._columns[c][0]}': 수치가 아닙니다 — '{text}'")
+                d[field] = v if v is not None else 0.0
             else:
                 d[field] = text
         return d
+
+    def validate(self) -> None:
+        """저장 전 전체 검사 — 잘못된 수치는 0 으로 저장하지 않고 ValueError."""
+        for r in range(self._table.rowCount()):
+            self._row_dict(r)
 
     def save(self) -> int:
         """현재 테이블을 DB에 반영(upsert) + 사라진 키 삭제. 반영 행수 반환."""
@@ -166,6 +174,8 @@ class LibraryManagerDialog(QDialog):
 
     def _save_all(self):
         try:
+            for t in self._tab_objs:          # 하나라도 잘못되면 아무것도 저장하지 않는다
+                t.validate()
             total = sum(t.save() for t in self._tab_objs)
             QMessageBox.information(self, "저장", f"부품 데이터 {total}건을 DB에 반영했습니다.")
             for t in self._tab_objs:

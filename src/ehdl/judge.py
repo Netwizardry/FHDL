@@ -80,6 +80,10 @@ def judge(res: EResult, rules: RuleSet, kb=None) -> List[Check]:
             c.status = "FAIL" if bound_is_exact(nr) else "REVIEW"
             if c.status == "REVIEW":
                 ev.assumptions.append("보수적 상한(산술합)이 정격을 넘음 — 역률을 입력하면 확정 판정")
+            elif unit == "A" and nr.current_lb is not None and nr.current_lb <= installed:
+                c.status = "REVIEW"
+                ev.assumptions.append(f"상 미지정 단상 부하를 한 상에 모은 상한 {actual:.1f} A 가 정격을 넘음 "
+                                      f"(하한 {nr.current_lb:.1f} A) — 접속 상(phase)을 입력하면 확정 판정")
         elif missing:
             c.status = "UNKNOWN"
         elif actual is None:
@@ -184,7 +188,11 @@ def _cable(res: EResult, rules: RuleSet, eid: str, add, kb=None):
         if nr.S_extra > 0:
             ev.assumptions.append("역률 미입력 부하 포함 — 피상전력 산술합(보수적 상한)")
         c.estimated = bool(ev.assumptions)
-        if actual > iz and not bound_is_exact(nr):
+        if actual > iz and nr.current_lb is not None and nr.current_lb <= iz:
+            ev.assumptions.append(f"상 미지정 단상 부하 상한 {actual:.1f} A (하한 {nr.current_lb:.1f} A) — 접속 상 입력 후 확정")
+            c.estimated = True
+            c.status = "REVIEW"
+        elif actual > iz and not bound_is_exact(nr):
             ev.assumptions.append("보수적 상한(산술합)이 허용전류를 넘음 — 역률을 입력하면 확정 판정")
             c.estimated = True
             c.status = "REVIEW"
@@ -389,20 +397,32 @@ def _unbalance(res: EResult, rules: RuleSet, nid: str, add):
         c.missing = [f"{i}: 접속 상(phase)" for i in unassigned] + [f"{i}: 부하 입력" for i in incomplete]
         add(c)
         return
-    per = [0.0, 0.0, 0.0]
     from .engine import _PHASE_IDX, load_power
+    ll = [i for i in singles if len(_PHASE_IDX[m.nodes[i].params["phase"]]) == 2]
+    # 설비불평형률은 '각 선간(또는 상)에 접속되는 단상 설비용량'의 차 — 선간 부하만이면 선간쌍별로 모은다(3상 3선식).
+    # 상-중성 부하가 섞이면 상별(선간 부하는 두 상에 절반씩)로 근사.
+    pairs = {"L1L2": 0, "L2L3": 1, "L3L1": 2}
+    per = [0.0, 0.0, 0.0]
     for i in singles:
         S, _, _ = load_power(m.nodes[i])
-        idx = _PHASE_IDX[m.nodes[i].params["phase"]]
-        for k in idx:
-            per[k] += abs(S) / len(idx)
-    total = rated.S
+        ph = m.nodes[i].params["phase"]
+        if ll and len(ll) == len(singles):
+            per[pairs[ph]] += abs(S)
+        else:
+            idx = _PHASE_IDX[ph]
+            for k in idx:
+                per[k] += abs(S) / len(idx)
+    # 분모 = 총 설비용량(kVA 산술합) ÷ 3 — 벡터합이 아니다
+    total = sum(abs(load_power(m.nodes[i])[0] or 0) for i in loads)
     pct = (max(per) - min(per)) / (total / 3.0) * 100.0 if total > 0 else 0.0
     lim = rules.values("UNBALANCE_1PH")["limit_pct"]
     c.actual = pct
     c.required = Requirement("설비불평형률", "≤", lim, "%", ref.id)
-    c.evidence.values = {"L1(VA)": round(per[0]), "L2(VA)": round(per[1]), "L3(VA)": round(per[2]),
-                         "총 설비용량(VA)": round(total)}
+    labels = ("L1-L2", "L2-L3", "L3-L1") if (ll and len(ll) == len(singles)) else ("L1", "L2", "L3")
+    c.evidence.values = {f"{labels[0]}(VA)": round(per[0]), f"{labels[1]}(VA)": round(per[1]),
+                         f"{labels[2]}(VA)": round(per[2]), "총 설비용량 산술합(VA)": round(total)}
+    if ll and len(ll) != len(singles):
+        c.evidence.assumptions.append("상-중성·선간 단상 부하 혼재 — 선간 부하는 두 상에 절반씩(근사)")
     c.status = "FAIL" if pct > lim else ("PASS" if ref.verified else "REVIEW")
     add(c)
 

@@ -21,7 +21,7 @@ FHDL/
 │   ├── domains.py        # 설계 분야 레지스트리 (FHDL 유체 · EHDL 전기 — 시작 화면)
 ├── src/ehdl/             # EHDL 전기 설계·검산 엔진 (SPEC: docs/ehdl/) + rules/(원문 대조 규칙) + kb/(기준 원문 DB)
 │   └── gui/              # start_dialog(분야 선택) + main_window + panels/ (5패널) + log_console + library_dialog
-├── tests/                # pytest (291개)
+├── tests/                # pytest (328개)
 ├── resources/styles/     # dark_theme.qss
 ├── data/library.db       # 전역 부품 라이브러리
 ├── projects/             # 프로젝트별 작업공간

@@ -32,6 +32,7 @@ class SCResult:
     voltage: Optional[float] = None          # 그 노드의 공칭 선간전압
     ik_max: Optional[float] = None           # A
     ik_min: Optional[float] = None
+    ik1_min: Optional[float] = None          # 상-중성 최소 (전원 + 2 × 배선 루프, 중성선 = 상도체 가정)
     z_max: Optional[complex] = None          # 최대 조건 임피던스 (Ω, 그 노드 전압 기준)
     z_min: Optional[complex] = None
     motor_contrib: float = 0.0               # A
@@ -84,6 +85,26 @@ def ik_min_at_end(res: EResult, rules: RuleSet, eid: str, S: float) -> Optional[
     return cmin * up.voltage / (SQRT3 * abs(up.z_min + cable_z(rules, e, S)[1]))
 
 
+def ik1_min_at_end(res: EResult, rules: RuleSet, eid: str, S: float) -> Optional[float]:
+    """상-중성 최소 단락전류 (배선 eid 단면적 S): 저압 모선 + 2 × (상위 배선 + 이 배선)."""
+    e = res.model.edges[eid]
+    up = res.sc.get(e.from_id)
+    if up is None or up.z_min is None or not up.voltage or e.params.get("length") is None \
+            or e.installed.get("material") is None:
+        return None
+    cur = e.from_id
+    while True:                                          # 저압 모선(변압기 2차·전원) 찾기
+        nxt = res.upstream.get(cur)
+        if nxt is None or res.model.nodes[cur].type in ("transformer", "source"):
+            break
+        cur = nxt
+    zr = res.sc[cur].z_min if cur in res.sc and res.sc[cur].z_min is not None else up.z_min
+    src = next((n for n in res.model.nodes.values() if n.type == "source"), None)
+    _, cmin, _ = _cfactor(rules, up.voltage, src)
+    z = zr + 2 * (up.z_min - zr) + 2 * cable_z(rules, e, S)[1]
+    return cmin * (up.voltage / SQRT3) / abs(z)
+
+
 def compute(res: EResult, rules: RuleSet) -> Dict[str, SCResult]:
     m = res.model
     out: Dict[str, SCResult] = {}
@@ -127,6 +148,23 @@ def compute(res: EResult, rules: RuleSet) -> Dict[str, SCResult]:
             continue
         r.assumptions, r.unverified = list(ur_.assumptions), list(ur_.unverified)
         zmax, zmin = ur_.z_max, ur_.z_min
+        # 이 설비로 들어오는 배선은 전원 측 전압에서 더한 뒤, 변압기면 2차로 환산한다
+        eid = res.via_edge.get(nid)
+        if eid:
+            e = m.edges[eid]
+            L, S, mat = e.params.get("length"), e.installed.get("size"), e.installed.get("material")
+            if L is None or S is None or mat is None:
+                r.missing.append(f"{eid}: " + ", ".join(x for x, ok in (("길이", L is not None), ("단면적", S),
+                                                                       ("재질", mat)) if not ok))
+                out[nid] = r
+                continue
+            z_c_max, z_c_min, note = cable_z(rules, e, S)
+            if note:
+                r.assumptions.append(note)
+            if "선로 고온 저항 환산 계수 0.004/K (IEC 60909, 원문 미제공)" not in r.unverified:
+                r.unverified.append("선로 고온 저항 환산 계수 0.004/K (IEC 60909, 원문 미제공)")
+            zmax += z_c_max
+            zmin += z_c_min
         if n.type == "transformer":
             prim, sec, srt = n.params.get("primary"), n.params.get("secondary"), n.installed.get("rated")
             uk, urr = n.installed.get("uk"), n.installed.get("ur")
@@ -147,22 +185,6 @@ def compute(res: EResult, rules: RuleSet) -> Dict[str, SCResult]:
             KT = kt["a"] * cmax / (1 + kt["b"] * xt)
             r.unverified.append("변압기 보정계수 KT (IEC 60909, 원문 미제공)")
             zmax, zmin = zmax + zt * KT, zmin + zt
-        eid = res.via_edge.get(nid)
-        if eid:
-            e = m.edges[eid]
-            L, S, mat = e.params.get("length"), e.installed.get("size"), e.installed.get("material")
-            if L is None or S is None or mat is None:
-                r.missing.append(f"{eid}: " + ", ".join(x for x, ok in (("길이", L is not None), ("단면적", S),
-                                                                       ("재질", mat)) if not ok))
-                out[nid] = r
-                continue
-            z_c_max, z_c_min, note = cable_z(rules, e, S)
-            if note:
-                r.assumptions.append(note)
-            if "선로 고온 저항 환산 계수 0.004/K (IEC 60909, 원문 미제공)" not in r.unverified:
-                r.unverified.append("선로 고온 저항 환산 계수 0.004/K (IEC 60909, 원문 미제공)")
-            zmax += z_c_max
-            zmin += z_c_min
         r.z_max, r.z_min = zmax, zmin
         out[nid] = r
     # 단락전류 + 전동기 기여 (최대)
@@ -203,6 +225,8 @@ def compute(res: EResult, rules: RuleSet) -> Dict[str, SCResult]:
             z_eff = z_th + (r.z_max - z_bus)
         r.ik_max = cmax * r.voltage / (SQRT3 * abs(z_eff))
         r.ik_min = cmin * r.voltage / (SQRT3 * abs(r.z_min))
+        zr = out[root].z_min if root in out and out[root].z_min is not None else r.z_min
+        r.ik1_min = cmin * (r.voltage / SQRT3) / abs(zr + 2 * (r.z_min - zr))   # 배선 왕복(상 + 중성)
         r.motor_contrib = max(r.ik_max - cmax * r.voltage / (SQRT3 * abs(r.z_max)), 0.0)
         if unknown:
             r.assumptions.append("전동기 기여 미포함(기동전류 배수 미입력): " + ", ".join(sorted(unknown)))

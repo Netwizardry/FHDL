@@ -81,11 +81,13 @@ class ResultsPanel(QWidget):
         self._nodes_table.setHorizontalHeaderLabels(
             ["노드 ID", f"수두({u['length'][1]})", f"압력({u['press'][1]})",
              f"유입({u['flow'][1]})", f"유출({u['flow'][1]})", f"NPSHa({u['length'][1]})",
-             f"절대해발({u['length'][1]})", "대기압(kPa)"])
+             f"절대해발({u['length'][1]})", f"대기압({u['atm'][1]})"])
 
     def _update_pipes(self, rows: List[PipeCalcResult]):
         u = self._units
         fl, pr, ln, dia = u["flow"][0], u["press"][0], u["length"][0], u["dia"][0]
+        sort_on = self._pipes_table.isSortingEnabled()
+        self._pipes_table.setSortingEnabled(False)        # 채우는 중 재정렬되면 행이 섞인다
         self._pipes_table.setRowCount(len(rows))
         for i, r in enumerate(rows):
             vals = [
@@ -105,10 +107,13 @@ class ResultsPanel(QWidget):
                 if r.status == "WARNING":
                     item.setBackground(Qt.GlobalColor.darkYellow)
                 self._pipes_table.setItem(i, j, item)
+        self._pipes_table.setSortingEnabled(sort_on)
 
     def _update_nodes(self, rows: List[NodeCalcResult]):
         u = self._units
         fl, pr, ln = u["flow"][0], u["press"][0], u["length"][0]
+        sort_on = self._nodes_table.isSortingEnabled()
+        self._nodes_table.setSortingEnabled(False)
         self._nodes_table.setRowCount(len(rows))
         for i, r in enumerate(rows):
             vals = [
@@ -119,12 +124,13 @@ class ResultsPanel(QWidget):
                 f"{r.flow_out * fl:.2f}",
                 f"{r.npsha * ln:.3f}",
                 f"{r.abs_altitude * ln:.1f}",
-                f"{r.atm_pressure / 1000:.2f}",
+                f"{r.atm_pressure * u['atm'][0]:.2f}",
             ]
             for j, v in enumerate(vals):
                 item = QTableWidgetItem(str(v))
                 item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
                 self._nodes_table.setItem(i, j, item)
+        self._nodes_table.setSortingEnabled(sort_on)
 
     def _export_csv(self):
         if not self._result:
@@ -184,11 +190,15 @@ class _SummaryWidget(QWidget):
         fl_f, fl_u = units["flow"]
         ln_f, ln_u = units["length"]
 
-        self._cards[0].setText(f"총 유량: {s.total_flow * 3600:.2f} m³/h ({s.total_flow * fl_f:.1f} {fl_u})")
+        if fl_u == "GPM":
+            self._cards[0].setText(f"총 유량: {s.total_flow * fl_f:.1f} {fl_u}")
+        else:
+            self._cards[0].setText(f"총 유량: {s.total_flow * 3600:.2f} m³/h ({s.total_flow * fl_f:.1f} {fl_u})")
         self._cards[1].setText(f"총 요구양정: {s.required_head * ln_f:.2f} {ln_u}")
         self._cards[2].setText(f"권장 펌프 유량: {s.recommended_pump_flow * fl_f:.1f} {fl_u}")
         self._cards[3].setText(f"권장 펌프 양정: {s.recommended_pump_head * ln_f:.2f} {ln_u}")
-        self._cards[4].setText(f"권장 탱크 용량: {s.recommended_tank_volume:.2f} m³")
+        vf, vu = units.get("volume", (1.0, "m³"))
+        self._cards[4].setText(f"권장 탱크 용량: {s.recommended_tank_volume * vf:.2f} {vu}")
         worst = " → ".join(s.worst_path) if s.worst_path else "─"
         self._cards[5].setText(f"최불리 경로: {worst}")
 

@@ -5,6 +5,7 @@ DSL 변형은 ehdl.dsl_editor 를 재사용한다.
 """
 from __future__ import annotations
 
+import re
 from typing import Optional
 
 from fhdl.core.command import CommandResult, _split_kv
@@ -34,7 +35,13 @@ def execute_command(source: str, command: str, result=None) -> CommandResult:
     cmd = (command or "").strip()
     if not cmd:
         return CommandResult(rerun=False)
-    parts = cmd.split()
+    import shlex
+    try:
+        parts = shlex.split(cmd, posix=True)          # name="펌프 1" 처럼 따옴표 값 보존
+    except ValueError as e:
+        return CommandResult(messages=[f"명령을 해석할 수 없습니다: {e} (따옴표 짝 확인)"], level="ERROR", rerun=False)
+    if not parts:
+        return CommandResult(rerun=False)
     verb = parts[0].lower()
     pos, kv = _split_kv(parts[1:])
 
@@ -62,6 +69,8 @@ def execute_command(source: str, command: str, result=None) -> CommandResult:
         if len(pos) < 2:
             return err("사용법: add <종류> <id> [key=value ...]")
         t, nid = pos[0].lower(), pos[1]
+        if not re.fullmatch(r"\w+", nid):
+            return err(f"ID '{nid}' 에는 영문·숫자·_ 만 쓸 수 있습니다 (표시 이름은 name=…)")
         if t not in BLOCK_TYPES or t == "system":
             return err(f"알 수 없는 종류 '{t}' (가능: {', '.join(t for t in BLOCK_TYPES if t != 'system')})")
         if block_type(source, nid):

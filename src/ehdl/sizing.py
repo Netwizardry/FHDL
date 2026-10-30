@@ -171,15 +171,25 @@ def _thermal_condition(res, rules, e) -> Tuple[Optional[float], List[str], List[
     if miss or tn > rules.values("SC_THERMAL")["t_max"]:
         return None, miss or [f"동작시간 {tn:g}s > 5s — 식 212.5-1 범위 밖"], [], {}
     kv = rules.values("K_FACTOR")[mat]
-    k = kv[ins] if ins in ("XLPE", "EPR") else kv["PVC"]
+
+    def k_of(S):                                    # 표 212.5-1: PVC 는 300 ㎟ 초과에서 k 가 작다
+        return kv[ins] if ins in ("XLPE", "EPR") else (kv["PVC_gt300"] if S > 300 else kv["PVC"])
     # 배선 끝 최소 단락전류는 단면적에 따라 달라진다 — 후보마다 다시 구해 S ≥ Is,min(S)·√tn / k
-    S = _first(lambda x: x >= ik_min_at_end(res, rules, e.id, x) * math.sqrt(tn) / k)
+    from .shortcircuit import ik1_min_at_end
+    one_ph = any(m.nodes[i].params.get("phases") == 1 for i in loads_under(m, res.children, e.to_id))
+
+    def ik_at(x):                                   # 단상 부하 회로는 상-중성 최소가 더 작을 수 있다
+        a = ik_min_at_end(res, rules, e.id, x)
+        b = ik1_min_at_end(res, rules, e.id, x) if one_ph else None
+        return min(a, b) if (a is not None and b is not None) else a
+    S = _first(lambda x: x >= ik_at(x) * math.sqrt(tn) / k_of(x))
     note = []
     if tn < 0.1:
         note.append(f"동작시간 {tn:g}s < 0.1s — 한류형이면 제조사 통과 I²t 로 더 작아질 수 있음")
     if S is None:
         return None, ["표준 단면적 범위에서 열적 내량 충족 불가"], note, {}
-    ik = ik_min_at_end(res, rules, e.id, S)
+    ik = ik_at(S)
+    k = k_of(S)
     return S, [], note, {"Is,min(A)": round(ik), "tn(s)": tn, "k": k, "S ≥ Is·√t/k(㎟)": round(ik * math.sqrt(tn) / k, 2)}
 
 
@@ -224,7 +234,9 @@ def _size(res: EResult, rules: RuleSet, kb, eid: str, add):
     gov = max(known, key=known.get)
     s_req = known[gov]
     c.actual = s_req
-    c.required = Requirement(f"단면적 (지배 조건: {gov})", "≥", s_req, "mm²")
+    amp_only_inst = conds["허용전류·보호협조"][0] is None and not conds["허용전류·보호협조"][1] and S_inst
+    c.required = Requirement(f"단면적 (지배 조건: {gov}" + ("; 허용전류는 입력 IZ 로 실제 규격만 확인" if amp_only_inst else "")
+                             + ")", "≥", s_req, "mm²")
     i = STANDARD_SIZES.index(s_req)
     for j, x in enumerate(STANDARD_SIZES[i:i + N_CANDIDATES]):
         ev.values[f"후보{j + 1}(㎟)"] = x
@@ -232,7 +244,7 @@ def _size(res: EResult, rules: RuleSet, kb, eid: str, add):
         ev.rule = rules.ref("VD_LIMIT")
     elif gov == "단락 열적 내량":
         ev.rule = rules.ref("SC_THERMAL")
-    c.estimated = bool(ev.assumptions)
+    c.estimated = bool(ev.assumptions) or bool(amp_only_inst)
     amp_vd_unknown = any(conds[k][0] is None and conds[k][1] for k in ("허용전류·보호협조", "전압강하"))
     if S_inst is None:
         c.status = "UNKNOWN" if amp_vd_unknown else "N/A"

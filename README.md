@@ -151,7 +151,7 @@ FHDL/
 ├── resources/styles/       # dark_theme.qss
 ├── data/library.db         # 전역 부품 라이브러리 (자동 생성)
 ├── projects/               # 프로젝트별 작업공간 (main.fhd, state.db, project.fhproj)
-├── tests/                  # pytest (291개)
+├── tests/                  # pytest (328개)
 ├── docs/                   # 코드 기준 문서 (INDEX·LANGUAGE·SOLVER·…)
 └── archive/                # 구 명세·감사·v0.1 보관
 ```
@@ -161,7 +161,7 @@ FHDL/
 ## 테스트
 
 ```bash
-pytest -q     # 291개 (파서·솔버·네트워크·재질·부속·경로·도면·DXF 이식·DB·프로젝트IO·명령콘솔 등)
+pytest -q     # 328개 (파서·솔버·네트워크·재질·부속·경로·도면·DXF 이식·DB·프로젝트IO·명령콘솔 등)
 ```
 
 ---

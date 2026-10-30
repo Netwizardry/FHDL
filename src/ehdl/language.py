@@ -17,6 +17,7 @@ class Attr(NamedTuple):
     label: str       # 한국어 이름
     help: str = ""   # 한 줄 설명 (용어 풀이)
     choices: Tuple[str, ...] = ()
+    unit: str = ""   # 단위 없이 숫자만 쓴 경우의 기본 단위 (비우면 종류 기본값 — units.DEFAULT_UNIT)
 
 
 # 노드 종류 → (한국어 이름, 쉬운 설명)
@@ -61,8 +62,9 @@ NODE_ATTRS: Dict[str, Dict[str, Attr]] = {
         "frequency": Attr("frequency", "param", "주파수"),
         "limit_kw": Attr("power", "installed", "사용 가능한 전력 한도(kW)", "계약·공급 조건으로 정해진 유효전력 한도"),
         "limit_kva": Attr("apparent", "installed", "사용 가능한 전력 한도(kVA)"),
-        "sc_mva": Attr("apparent", "param", "전원 단락용량(최대)", "한전 제공 공급점 단락용량 S''k (최대 조건) — 단락전류 계산에 필수"),
-        "sc_mva_min": Attr("apparent", "param", "전원 단락용량(최소)", "최소 단락전류용 (생략 시 최대와 같게)"),
+        "sc_mva": Attr("apparent", "param", "전원 단락용량(최대)", "한전 제공 공급점 단락용량 S''k (최대 조건) — 단락전류 계산에 필수",
+                       unit="mva"),
+        "sc_mva_min": Attr("apparent", "param", "전원 단락용량(최소)", "최소 단락전류용 (생략 시 최대와 같게)", unit="mva"),
         "rx": Attr("ratio", "param", "전원 R/X", "전원 임피던스의 저항/리액턴스 비 (미입력 시 0.1 가정 → 추정)"),
         "tolerance": Attr("enum", "param", "전압 허용차", "저압 계통 허용차 +6%(cmax 1.05) / +10%(cmax 1.10)", ("6%", "10%")),
     },

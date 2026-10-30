@@ -97,13 +97,15 @@ def elbow_takeoff_m(inner_d_m: float, angle_deg: float) -> float:
     if angle_deg < MIN_BEND_DEG:
         return 0.0
     inch = nominal_size(inner_d_m).nominal_inch
-    return LONG_ELBOW_RATIO * inch * 0.0254 * math.tan(math.radians(min(angle_deg, 180.0)) / 2)
+    # 엘보 하나의 꺾임은 90° 까지 — 그 이상(U턴)은 엘보 2개라 tan(θ/2) 가 발산하지 않게 90° 로 묶는다
+    return LONG_ELBOW_RATIO * inch * 0.0254 * math.tan(math.radians(min(abs(angle_deg), 90.0)) / 2)
 
 
 class Spool(NamedTuple):
     index: int          # 구간 번호 (0부터)
     length_m: float     # 구간 중심선 길이
-    cut_m: float        # 단관 절단 길이 (테이크오프 차감)
+    cut_m: float        # 단관 절단 길이 (테이크오프 차감, 0 미만은 0)
+    short: bool = False  # C-C 가 양 끝 테이크오프 합보다 짧다 (단관 없음)
 
 
 def spool_cut_lengths(pts: Sequence[Point3], inner_d_m: float) -> List[Spool]:
@@ -114,10 +116,13 @@ def spool_cut_lengths(pts: Sequence[Point3], inner_d_m: float) -> List[Spool]:
     for i in range(len(pts) - 1):
         L = norm(sub(pts[i + 1], pts[i]))
         cut = L - (take[i - 1] if i >= 1 else 0.0) - (take[i] if i < len(take) else 0.0)
-        out.append(Spool(i, L, cut))
+        # 구간이 엘보 테이크오프 합보다 짧으면 단관이 들어갈 자리가 없다 — 0 으로 두고 표시(short)
+        out.append(Spool(i, L, max(cut, 0.0), cut < -1e-9))
     return out
 
 
 def route_end_dirs(pts: Sequence[Point3]) -> Tuple[Point3, Point3]:
-    """(시작점에서 나가는 방향, 끝점으로 들어오는 방향) 단위벡터."""
+    """(시작점에서 나가는 방향, 끝점으로 들어오는 방향) 단위벡터. 점이 하나뿐이면 영벡터."""
+    if len(pts) < 2:
+        return (0.0, 0.0, 0.0), (0.0, 0.0, 0.0)
     return unit(sub(pts[1], pts[0])), unit(sub(pts[-1], pts[-2]))

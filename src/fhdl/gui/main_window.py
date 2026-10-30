@@ -79,6 +79,12 @@ def load_theme_qss() -> str:
         return ""
 
 
+def _changed(fields, values: dict) -> dict:
+    """편집 대화상자 — 사용자가 바꾼 값만 (그대로 OK 하면 DSL 을 건드리지 않는다)."""
+    init = {k: v for k, _, v in fields}
+    return {k: v for k, v in values.items() if str(v).strip() != str(init.get(k, "")).strip()}
+
+
 class MainWindow(QMainWindow):
     switch_domain_requested = Signal()   # 파일 → 설계 분야 전환 (시작 화면으로)
     closed = Signal()                    # 창이 실제로 닫힘 (앱 컨트롤러가 종료 판단)
@@ -392,18 +398,40 @@ class MainWindow(QMainWindow):
     def _on_project_opened(self, path: str):
         from ..core.project_io import load_project
 
-        if path != self._project_dir and not self.confirm_discard("다른 프로젝트를 열기"):
+        if not self.confirm_discard("프로젝트 열기"):          # 같은 프로젝트를 다시 열어도 미저장 편집은 확인
             return
-        self._project_dir = path
         fhd = os.path.join(path, "main.fhd")
         if os.path.exists(fhd):
-            self._editor_panel.load_file(fhd)
+            try:
+                self._editor_panel.load_file(fhd)
+            except (OSError, UnicodeDecodeError) as e:
+                self._log(f"main.fhd 를 읽지 못했습니다 — 프로젝트를 열지 않습니다: {e}", "ERROR")
+                return
+            if getattr(self._editor_panel._editor, "decoded_fallback", False):
+                self._log("main.fhd 를 CP949 로 읽었습니다 — 저장하면 UTF-8 로 바뀝니다.", "WARNING")
+                self._editor_panel._editor.decoded_fallback = False
+        else:
+            self._editor_panel.set_source("", reset_undo=True)   # 이전 프로젝트 코드가 남지 않게
+            self._log("main.fhd 가 없는 폴더 — 빈 코드로 시작합니다.", "WARNING")
+        # 이전 프로젝트의 해석·결과 정리 (진행 중 해석은 버린다)
+        if self._worker:
+            self._worker.cancel()
+            self._worker = None
+        self._last_result = None
+        self._entity_map = None
+        self._analyzed_source = ""
+        self._drawing_panel.update_from_result(None, "")
+        self._project_dir = path
         self._saved_source = self._editor_panel.get_source()
         self.setWindowTitle(f"FHDL — {Path(path).name}")
 
         # 캐시(state.db) 가 현재 소스와 일치하면 결과를 재계산 없이 복원
-        loaded = load_project(path)
-        if loaded.cache_valid and loaded.result is not None:
+        try:
+            loaded = load_project(path)
+        except Exception as e:                              # 손상된 state.db 등 — 캐시 없이 연다
+            self._log(f"결과 캐시를 읽지 못했습니다(재해석 필요): {e}", "WARNING")
+            loaded = None
+        if loaded is not None and loaded.cache_valid and loaded.result is not None:
             self._restore_result(loaded.result)
             self._set_state(AppState.SOLVED, f"프로젝트 열림(결과 복원): {Path(path).name}")
         else:
@@ -426,7 +454,7 @@ class MainWindow(QMainWindow):
             self._drawing_panel.update_from_result(r, self._project_name())
 
     def _on_text_changed(self, text: str):
-        if self._state not in (AppState.VALIDATING, AppState.SOLVING):
+        if self._state not in (AppState.VALIDATING, AppState.SOLVING) and text != self._analyzed_source:
             self._set_state(AppState.DIRTY)
         self._lint(text)
 
@@ -480,8 +508,8 @@ class MainWindow(QMainWindow):
         """엔티티 현재값 → 편집 다이얼로그 필드 [(dsl_key, 라벨, 표시값)]."""
         f = [
             ("z", "고도 z", f"{ent.elevation:g}m"),
-            ("x", "x 좌표", f"{getattr(ent, 'x', 0):g}"),
-            ("y", "y 좌표", f"{getattr(ent, 'y', 0):g}"),
+            ("x", "x 좌표", f"{ent.x:g}" if getattr(ent, "has_xy", False) else ""),   # 자동 배치 노드를 (0,0)에 고정하지 않게
+            ("y", "y 좌표", f"{ent.y:g}" if getattr(ent, "has_xy", False) else ""),
         ]
         if ntype == "tank":
             if ent.volume != float("inf"):
@@ -509,8 +537,8 @@ class MainWindow(QMainWindow):
             ("length", "길이", f"{pipe.length:g}m"),
             ("diameter", "관경(auto 가능)", dia),
             ("material", "자재", pipe.material),
-            ("k_factor", "수동 K", f"{pipe.manual_k:g}"),
-            ("fittings", "피팅 [name*N]", ""),
+            ("k_factor", "수동 K", f"{pipe.k_explicit:g}" if pipe.k_explicit else ""),   # 부속 K 는 fittings 로 따로
+            ("fittings", "피팅 [name*N]", pipe.fittings),
         ]
 
     def _on_node_edit(self, node_id: str):
@@ -524,8 +552,8 @@ class MainWindow(QMainWindow):
         from ..core.dsl_editor import set_node_attributes, remove_node
 
         ntype = self._node_type_of(node_id)
-        dlg = NodeEditDialog(node_id, ntype, self._node_fields(ent, ntype), self,
-                             allow_delete=True)
+        fields = self._node_fields(ent, ntype)
+        dlg = NodeEditDialog(node_id, ntype, fields, self, allow_delete=True)
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
         src = self._editor_panel.get_source()
@@ -538,7 +566,9 @@ class MainWindow(QMainWindow):
             new_src = remove_node(src, node_id)
             self._log(f"노드 '{node_id}' 삭제 (연결 배관·connect 포함)", "WARNING")
         else:
-            new_src = set_node_attributes(src, node_id, dlg.get_values())
+            new_src = set_node_attributes(src, node_id, _changed(fields, dlg.get_values()))
+            if new_src == src:
+                return
             self._log(f"노드 '{node_id}' 속성 수정", "INFO")
         self._editor_panel.set_source(new_src)
         self._run_analysis()
@@ -562,11 +592,14 @@ class MainWindow(QMainWindow):
         from ..core.dsl_editor import set_pipe_attributes
 
         pipe = em.pipes[pipe_id]
-        dlg = NodeEditDialog(pipe_id, "pipe", self._pipe_fields(pipe), self)
+        fields = self._pipe_fields(pipe)
+        dlg = NodeEditDialog(pipe_id, "pipe", fields, self)
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
-        new_src = set_pipe_attributes(
-            self._editor_panel.get_source(), pipe_id, dlg.get_values())
+        src = self._editor_panel.get_source()
+        new_src = set_pipe_attributes(src, pipe_id, _changed(fields, dlg.get_values()))
+        if new_src == src:
+            return
         self._log(f"배관 '{pipe_id}' 속성 수정", "INFO")
         self._editor_panel.set_source(new_src)
         self._run_analysis()
@@ -586,8 +619,8 @@ class MainWindow(QMainWindow):
         from ..core.dsl_editor import set_constraint_attributes
 
         c = self._entity_map.constraints if self._entity_map else None
-        vmin = f"{c.velocity_min:g}m" if c else "0.3m"
-        vmax = f"{c.velocity_max:g}m" if c else "2.5m"
+        vmin = f"{c.velocity_min:g}m/s" if c else "0.3m/s"
+        vmax = f"{c.velocity_max:g}m/s" if c else "2.5m/s"
         sfh = f"{c.safety_factor_head:g}" if c else "1.1"
         sfn = f"{c.safety_factor_npsh:g}" if c else "1.1"
         fields = [
@@ -644,7 +677,8 @@ class MainWindow(QMainWindow):
         try:
             # main.fhd 원자적 저장 + project.fhproj 갱신 + (있으면)결과 캐시
             save_project(self._project_dir, self._editor_panel.get_source(),
-                         result=self._last_result, name=Path(self._project_dir).name)
+                         result=self._last_result, name=Path(self._project_dir).name,
+                         result_source=self._analyzed_source)   # 결과는 그 결과를 낸 소스의 체크섬으로
             self._saved_source = self._editor_panel.get_source()
             self._set_state(AppState.SAVED, "저장 완료")
         except Exception as e:
@@ -656,6 +690,9 @@ class MainWindow(QMainWindow):
 
     def _run_analysis(self):
         if self._state in (AppState.VALIDATING, AppState.SOLVING):
+            return
+        if self._worker is not None and self._worker._cancel:     # 취소 중인 해석이 끝나기 전엔 새로 시작하지 않는다
+            self._log("이전 해석을 취소하는 중입니다 — 잠시 뒤 다시 실행하세요.", "WARNING")
             return
 
         source = self._editor_panel.get_source()
@@ -672,23 +709,33 @@ class MainWindow(QMainWindow):
         self._diag_panel.clear()
         self._viewer_panel.clear()
 
-        self._worker = AnalysisWorker(source, output_dir)
-        self._worker.signals.status_update.connect(self._on_status_update)
-        self._worker.signals.finished.connect(self._on_analysis_finished)
-        self._worker.signals.error.connect(self._on_analysis_error)
-        self._thread_pool.start(self._worker)
+        w = AnalysisWorker(source, output_dir)
+        self._worker = w
+        self._live_workers = getattr(self, "_live_workers", set()) | {w}   # 끝날 때까지 강한 참조(신호 유실 방지)
+        # 신호마다 보낸 워커를 함께 넘겨, 지금 워커가 아닌(취소·다른 프로젝트) 결과는 버린다
+        w.signals.status_update.connect(lambda msg, w=w: self._on_status_update(msg, w))
+        w.signals.finished.connect(lambda r, w=w: self._on_analysis_finished(r, w))
+        w.signals.error.connect(lambda e, w=w: self._on_analysis_error(e, w))
+        self._thread_pool.start(w)
 
     def _stop_analysis(self):
         if self._worker:
             self._worker.cancel()
             self._set_state(AppState.ABORTED, "분석 취소 중...")
 
-    def _on_status_update(self, msg: str):
+    def _on_status_update(self, msg: str, worker=None):
+        if worker is not None and worker is not self._worker:
+            return
+        if self._state == AppState.ABORTED:
+            return
         self._set_state(AppState.SOLVING, msg)
 
-    def _on_analysis_finished(self, result):
+    def _on_analysis_finished(self, result, worker=None):
         from ..core.models import AnalysisResult
         r: AnalysisResult = result
+        getattr(self, "_live_workers", set()).discard(worker)
+        if worker is not None and worker is not self._worker:
+            return                                   # 이전(취소·다른 프로젝트) 해석의 결과
         worker, self._worker = self._worker, None
         if r.status == "CANCELLED" or (worker is not None and worker._cancel):
             # 중단된 해석의 부분 결과는 표시·캐시하지 않는다 — 편집 상태로 복귀
@@ -716,6 +763,9 @@ class MainWindow(QMainWindow):
         self._editor_panel.set_error_lines(error_lines)
 
         if r.status == "FAILED":
+            # 이전 결과를 남기면 보고서·도면이 새 코드와 옛 숫자를 짝지어 낸다
+            self._last_result = None
+            self._drawing_panel.update_from_result(None, self._project_name())
             self._set_state(AppState.VALIDATION_FAILED,
                             f"오류 {len(r.errors)}건 발견")
             return
@@ -752,7 +802,10 @@ class MainWindow(QMainWindow):
         state = AppState.CALC_FAILED if err_cnt else AppState.SOLVED
         self._set_state(state, msg)
 
-    def _on_analysis_error(self, err: str):
+    def _on_analysis_error(self, err: str, worker=None):
+        getattr(self, "_live_workers", set()).discard(worker)
+        if worker is not None and worker is not self._worker:
+            return
         self._worker = None
         self._log(f"내부 오류: {err}", "ERROR")
         self._set_state(AppState.CALC_FAILED, f"내부 오류: {err}")

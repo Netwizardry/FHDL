@@ -27,10 +27,14 @@ def display_units(unit_system: str) -> Dict[str, Tuple[float, str]]:
             "press":  (_PSI, "psi"),
             "length": (_FT, "ft"),
             "dia":    (_IN, "in"),
+            "volume": (264.172052, "gal"),
+            "atm":    (_PSI, "psi"),
         }
     return {
         "flow":   (_LPM, "L/min"),
         "press":  (_MPA, "MPa"),
         "length": (1.0, "m"),
         "dia":    (1000.0, "mm"),
+        "volume": (1.0, "m³"),
+        "atm":    (1e-3, "kPa"),
     }
